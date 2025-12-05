@@ -2,8 +2,8 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-import React, { useCallback, useState, useEffect } from 'react';
-import { ArrowUpTrayIcon, SparklesIcon, CpuChipIcon } from '@heroicons/react/24/outline';
+import React, { useCallback, useState, useEffect, useRef } from 'react';
+import { ArrowUpTrayIcon, SparklesIcon, CpuChipIcon, MicrophoneIcon, PaperAirplaneIcon } from '@heroicons/react/24/outline';
 
 interface InputAreaProps {
   onGenerate: (prompt: string, file?: File) => void;
@@ -44,6 +44,9 @@ const CyclingText = () => {
 
 export const InputArea: React.FC<InputAreaProps> = ({ onGenerate, isGenerating, disabled = false }) => {
   const [isDragging, setIsDragging] = useState(false);
+  const [prompt, setPrompt] = useState("");
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef<any>(null);
 
   const handleFile = (file: File) => {
     if (file.type.startsWith('image/') || file.type === 'application/pdf') {
@@ -80,8 +83,63 @@ export const InputArea: React.FC<InputAreaProps> = ({ onGenerate, isGenerating, 
     setIsDragging(false);
   }, []);
 
+  // Speech Recognition Logic
+  useEffect(() => {
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+    };
+  }, []);
+
+  const toggleListening = () => {
+    if (isListening) {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+      setIsListening(false);
+    } else {
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        alert("Speech recognition is not supported in this browser.");
+        return;
+      }
+      
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.lang = 'en-US';
+
+      recognition.onstart = () => setIsListening(true);
+      
+      recognition.onresult = (event: any) => {
+        const transcript = event.results[0][0].transcript;
+        setPrompt((prev) => {
+            const trimmedPrev = prev.trim();
+            return trimmedPrev ? `${trimmedPrev} ${transcript}` : transcript;
+        });
+      };
+
+      recognition.onerror = (event: any) => {
+        console.error("Speech recognition error", event.error);
+        setIsListening(false);
+      };
+
+      recognition.onend = () => setIsListening(false);
+
+      recognitionRef.current = recognition;
+      recognition.start();
+    }
+  };
+
+  const handleTextSubmit = () => {
+    if (!prompt.trim() || isGenerating) return;
+    onGenerate(prompt);
+    setPrompt("");
+  };
+
   return (
-    <div className="w-full max-w-4xl mx-auto perspective-1000">
+    <div className="w-full max-w-4xl mx-auto perspective-1000 flex flex-col gap-6">
       <div 
         className={`relative group transition-all duration-300 ${isDragging ? 'scale-[1.01]' : ''}`}
       >
@@ -150,6 +208,34 @@ export const InputArea: React.FC<InputAreaProps> = ({ onGenerate, isGenerating, 
                 disabled={isGenerating || disabled}
             />
         </label>
+      </div>
+
+      {/* Input Bar for Text/Voice Start */}
+      <div className="w-full bg-zinc-900/50 border border-zinc-800 rounded-xl p-2 flex items-center gap-2 backdrop-blur-sm transition-colors focus-within:border-zinc-600 focus-within:bg-zinc-900/80">
+         <button 
+            onClick={toggleListening} 
+            className={`p-3 rounded-lg hover:bg-zinc-800 transition-colors ${isListening ? 'text-red-500 animate-pulse bg-red-500/10' : 'text-zinc-400'}`}
+            title="Start voice dictation"
+            disabled={isGenerating}
+         >
+            <MicrophoneIcon className="w-5 h-5" />
+         </button>
+         <input 
+            type="text" 
+            value={prompt}
+            onChange={e => setPrompt(e.target.value)}
+            placeholder="Or type/speak your notes to generate a KB article..." 
+            className="flex-1 bg-transparent border-none focus:outline-none focus:ring-0 text-white placeholder-zinc-500 text-sm md:text-base"
+            onKeyDown={e => e.key === 'Enter' && handleTextSubmit()}
+            disabled={isGenerating}
+         />
+         <button 
+            onClick={handleTextSubmit} 
+            disabled={!prompt.trim() || isGenerating} 
+            className={`p-3 rounded-lg transition-colors ${!prompt.trim() || isGenerating ? 'text-zinc-600' : 'text-blue-400 hover:bg-blue-500/10'}`}
+         >
+            <PaperAirplaneIcon className="w-5 h-5" />
+         </button>
       </div>
     </div>
   );

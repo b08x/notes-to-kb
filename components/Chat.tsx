@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 import React, { useState, useRef, useEffect } from 'react';
-import { PaperAirplaneIcon, PaperClipIcon, CodeBracketIcon, SparklesIcon, PhotoIcon, CameraIcon, PencilSquareIcon } from '@heroicons/react/24/outline';
+import { PaperAirplaneIcon, PaperClipIcon, CodeBracketIcon, SparklesIcon, PhotoIcon, CameraIcon, PencilSquareIcon, MicrophoneIcon } from '@heroicons/react/24/outline';
 import { Creation } from './CreationHistory';
 
 export interface Message {
@@ -39,6 +39,9 @@ export const Chat: React.FC<ChatProps> = ({
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadType, setUploadType] = useState<'source' | 'screenshot'>('source');
   
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef<any>(null);
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const sourceInputRef = useRef<HTMLInputElement>(null);
   const screenshotInputRef = useRef<HTMLInputElement>(null);
@@ -49,6 +52,60 @@ export const Chat: React.FC<ChatProps> = ({
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages]);
+
+  // Cleanup speech recognition on unmount
+  useEffect(() => {
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+    };
+  }, []);
+
+  const toggleListening = () => {
+    if (isListening) {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+      setIsListening(false);
+    } else {
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        alert("Speech recognition is not supported in this browser.");
+        return;
+      }
+      
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.lang = 'en-US';
+
+      recognition.onstart = () => {
+        setIsListening(true);
+      };
+
+      recognition.onresult = (event: any) => {
+        const transcript = event.results[0][0].transcript;
+        setInput((prev) => {
+           // Append nicely
+           const trimmedPrev = prev.trim();
+           return trimmedPrev ? `${trimmedPrev} ${transcript}` : transcript;
+        });
+      };
+
+      recognition.onerror = (event: any) => {
+        console.error("Speech recognition error", event.error);
+        setIsListening(false);
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+
+      recognitionRef.current = recognition;
+      recognition.start();
+    }
+  };
 
   const handleSubmit = (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -294,12 +351,28 @@ export const Chat: React.FC<ChatProps> = ({
                         handleSubmit();
                     }
                 }}
-                placeholder={messages.length > 0 ? "Ask for changes..." : "Type instructions..."}
+                placeholder={messages.length > 0 ? "Ask for changes or add context..." : "Type instructions or upload..."}
                 className="w-full bg-transparent text-zinc-100 placeholder-zinc-500 focus:outline-none resize-none max-h-32 py-2 text-sm"
                 rows={1}
                 style={{ minHeight: '40px' }}
               />
           </div>
+
+          {/* Microphone Button */}
+          <button
+            type="button"
+            onClick={toggleListening}
+            className={`
+                p-2 rounded-lg transition-all
+                ${isListening 
+                    ? 'bg-red-500/20 text-red-500 animate-pulse' 
+                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'
+                }
+            `}
+            title="Voice Input"
+          >
+            <MicrophoneIcon className="w-5 h-5" />
+          </button>
 
           {/* Send Button */}
           <button
