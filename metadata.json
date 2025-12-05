@@ -1,0 +1,5 @@
+{
+  "name": "Notes to KB",
+  "description": "Upload notes, screenshots, or documents to assist with the generation of structured ServiceNow Knowledge Base articles.",
+  "requestFramePermissions": []
+}
