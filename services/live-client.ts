@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -199,9 +198,20 @@ export class LiveClient {
     if (!this.outputAudioContext || !this.outputNode) return;
 
     const arrayBuffer = this.base64ToArrayBuffer(base64);
-    const audioBuffer = await this.outputAudioContext.decodeAudioData(arrayBuffer).catch(async () => {
-        return this.decodePCM16(arrayBuffer, 24000);
-    });
+
+    // Clone the buffer because decodeAudioData detaches the input buffer.
+    // If native decoding fails (which happens for raw PCM), we need the clone for manual decoding.
+    const bufferClone = arrayBuffer.slice(0);
+    
+    let audioBuffer: AudioBuffer;
+
+    try {
+        audioBuffer = await this.outputAudioContext.decodeAudioData(arrayBuffer);
+    } catch (e) {
+        // Fallback to manual PCM decode using the clone
+        // The API typically returns raw PCM 16-bit 24kHz
+        audioBuffer = this.decodePCM16(bufferClone, OUTPUT_SAMPLE_RATE);
+    }
 
     const source = this.outputAudioContext.createBufferSource();
     source.buffer = audioBuffer;
@@ -225,6 +235,7 @@ export class LiveClient {
   // Manual PCM Decode
   private decodePCM16(buffer: ArrayBuffer, sampleRate: number): AudioBuffer {
      if (!this.outputAudioContext) throw new Error("No output context");
+     
      const int16Array = new Int16Array(buffer);
      const float32Array = new Float32Array(int16Array.length);
      for (let i = 0; i < int16Array.length; i++) {
