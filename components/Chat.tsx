@@ -316,15 +316,22 @@ export const Chat: React.FC<ChatProps> = ({
               </div>
           )}
 
-          {/* Screenshot Upload Button */}
+          {/* Screenshot Upload Button - IMPROVED VISIBILITY */}
           <div className="relative group/btn">
             <button
               type="button"
               onClick={() => screenshotInputRef.current?.click()}
-              className={`p-2 rounded-lg transition-colors ${selectedFiles.length > 0 && uploadType === 'screenshot' ? 'bg-purple-500/20 text-purple-400' : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'}`}
+              className={`
+                flex items-center gap-2 p-2 sm:px-3 sm:py-2 rounded-lg transition-all border
+                ${selectedFiles.length > 0 && uploadType === 'screenshot' 
+                  ? 'bg-purple-500/20 text-purple-300 border-purple-500/50 shadow-[0_0_15px_rgba(168,85,247,0.15)]' 
+                  : 'bg-zinc-800/50 text-zinc-400 border-zinc-700/50 hover:bg-purple-500/10 hover:text-purple-300 hover:border-purple-500/30'
+                }
+              `}
               title="Upload Context Screenshots"
             >
               <CameraIcon className="w-5 h-5" />
+              <span className="hidden sm:inline text-xs font-medium">Add Context</span>
             </button>
             <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-zinc-800 text-xs text-zinc-300 rounded opacity-0 group-hover/btn:opacity-100 pointer-events-none whitespace-nowrap border border-zinc-700">
               Upload Screenshot (Context)
@@ -344,7 +351,13 @@ export const Chat: React.FC<ChatProps> = ({
             <button
               type="button"
               onClick={() => sourceInputRef.current?.click()}
-              className={`p-2 rounded-lg transition-colors ${selectedFiles.length > 0 && uploadType === 'source' ? 'bg-blue-500/20 text-blue-400' : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'}`}
+              className={`
+                 p-2 rounded-lg transition-colors border
+                 ${selectedFiles.length > 0 && uploadType === 'source' 
+                    ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' 
+                    : 'bg-zinc-800/50 text-zinc-400 border-transparent hover:bg-zinc-800 hover:text-zinc-200'
+                 }
+              `}
               title="Upload Source (Notes/PDF)"
             >
               <PaperClipIcon className="w-5 h-5" />
