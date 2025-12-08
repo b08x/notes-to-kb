@@ -1,3 +1,4 @@
+
 import { z } from "zod";
 
 // CORE-002: Raw Node Zod Schemas
@@ -53,8 +54,8 @@ export const RawNodeSchema = z.discriminatedUnion("type", [
 
 export type RawNode = z.infer<typeof RawNodeSchema>;
 
-// ServiceNow Article Schema
-export const ServiceNowArticleSchema = z.object({
+// Standard KB Article Schema
+export const KBArticleSchema = z.object({
   number: z.string().optional(),
   short_description: z.string().describe("The Title of the KB Article"),
   text: z.string().describe("The main HTML body content"),
@@ -67,4 +68,4 @@ export const ServiceNowArticleSchema = z.object({
   }).optional()
 });
 
-export type ServiceNowArticle = z.infer<typeof ServiceNowArticleSchema>;
+export type KBArticle = z.infer<typeof KBArticleSchema>;

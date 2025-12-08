@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -268,7 +269,7 @@ export const Chat: React.FC<ChatProps> = ({
         {activeArtifactId && !isGenerating && (
           <div className="flex gap-2 mb-3 px-1 overflow-x-auto scrollbar-hide">
              <button 
-                onClick={() => handleSuggestion("Suggest improvements for this article based on ServiceNow best practices.")}
+                onClick={() => handleSuggestion("Suggest improvements for this article based on industry best practices.")}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-xs rounded-full border border-emerald-500/20 transition-colors whitespace-nowrap"
              >
                 <SparklesIcon className="w-3.5 h-3.5" />

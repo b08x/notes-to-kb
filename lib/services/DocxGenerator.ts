@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -20,7 +21,7 @@ import {
 
 export class DocxGenerator {
   /**
-   * Converts HTML string to a structured ServiceNow-compliant DOCX Blob.
+   * Converts HTML string to a structured Standard-compliant DOCX Blob.
    */
   async generate(htmlString: string): Promise<Blob> {
     const parser = new DOMParser();

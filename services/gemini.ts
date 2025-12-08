@@ -56,7 +56,6 @@ export async function bringToLife(
                       combinedText.includes("article") || 
                       combinedText.includes("documentation") || 
                       combinedText.includes("troubleshoot") || 
-                      combinedText.includes("servicenow") ||
                       combinedText.includes("guide");
 
   // Logic: If explicitly asking for generic generation (e.g. "make a game"), use Generic.
@@ -68,7 +67,7 @@ export async function bringToLife(
   }
 
   let finalPrompt = attachments.length > 0
-    ? `NEW REQUEST: ${currentPrompt || (isKBContext ? `Convert these documents into a ${templateType === 'auto' ? 'ServiceNow KB Article' : templateType.toUpperCase() + ' document'}.` : "Bring this idea to life.")}`
+    ? `NEW REQUEST: ${currentPrompt || (isKBContext ? `Convert these documents into a ${templateType === 'auto' ? 'Standard KB Article' : templateType.toUpperCase() + ' document'}.` : "Bring this idea to life.")}`
     : `NEW REQUEST: ${currentPrompt}`;
 
   // Inject Image IDs into the prompt text if provided

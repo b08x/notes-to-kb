@@ -190,7 +190,7 @@ const App: React.FC = () => {
       if (isScreenshotAnalysis) {
         modifiedText = `[KB CONTEXT ANALYSIS] I am uploading screenshots for context. Please analyze the UI elements, error messages, and visual state shown in these images. Do not generate the full KB article yet. Instead, generate a "Screenshot Analysis Report" in HTML that lists the observed errors, UI state, and potential issues. This will be used as context for the future KB article.\n\nUser Note: ${text}`;
       } else if (isSourceUpload) {
-        modifiedText = `[KB GENERATION] Here are the source documents (notes/PDFs). Please convert them into a ${templateType !== 'auto' ? templateType : 'ServiceNow KB Article'} using the template specifications. Use any previous screenshot analyses in the history as context to enrich the article (e.g., adding specific error codes found in screenshots). If you use a screenshot, reference it by its ID provided in the system prompt.\n\nUser Note: ${text}`;
+        modifiedText = `[KB GENERATION] Here are the source documents (notes/PDFs). Please convert them into a ${templateType !== 'auto' ? templateType : 'Standard KB Article'} using the template specifications. Use any previous screenshot analyses in the history as context to enrich the article (e.g., adding specific error codes found in screenshots). If you use a screenshot, reference it by its ID provided in the system prompt.\n\nUser Note: ${text}`;
       } else if (files.length === 0 && currentHistory.some(m => m.attachments?.some(a => a.category === 'screenshot'))) {
           // No file, but we have screenshots in history, likely a refinement request
           modifiedText = `${text}\n\n[System: Remember to use existing image IDs (e.g. img-...) if you need to insert an image.]`;

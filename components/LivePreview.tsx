@@ -382,7 +382,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, c
         }
     };
 
-    // STRICT DOCX EXPORT (ServiceNow Compatible)
+    // STRICT DOCX EXPORT (Standard Compatible)
     const handleExportDocx = async () => {
         if (!creation || !processedHtml) return;
         setIsExporting(true);
@@ -515,7 +515,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, c
                     onClick={handleExportDocx}
                     disabled={isExporting || isEditing || showStyleEditor}
                     className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:bg-zinc-800 rounded-md transition-colors border border-transparent hover:border-zinc-700 disabled:opacity-50"
-                    title="Export as ServiceNow Compatible Word Doc"
+                    title="Export as Standard Compatible Word Doc"
                 >
                     {isExporting ? (
                         <div className="w-3.5 h-3.5 border-2 border-zinc-400 border-t-transparent rounded-full animate-spin"></div>
