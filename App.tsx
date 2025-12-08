@@ -349,18 +349,55 @@ const App: React.FC = () => {
         </div>
 
         {/* Right Panel: Workspace / Preview (Rest of width) */}
-        <div className="hidden md:block flex-1 h-full bg-[#121214] relative">
-            {/* Dot Grid Background for "Empty" feel if needed, but Preview usually covers it */}
+        {/* We use Flex Column to split horizontally when Live is Active */}
+        <div className="hidden md:flex flex-1 flex-col h-full bg-[#121214] relative overflow-hidden">
+            {/* Dot Grid Background */}
             <div className="absolute inset-0 bg-dot-grid opacity-20 pointer-events-none"></div>
             
-            <LivePreview 
-                creation={activeProject.activeCreation} 
-                isLoading={isGenerating} 
-                loadingMessage={generationStatus}
-                className="w-full h-full shadow-2xl"
-                imageMap={activeProject.imageMap}
-                onUpdateArtifact={(id, html) => handleUpdateArtifact(id, html)}
-            />
+            {isLiveActive ? (
+                // SPLIT VIEW: Preview on Top (50%), Live Panel on Bottom (50%)
+                <>
+                    <div className="h-1/2 w-full relative border-b border-zinc-800 transition-all duration-500">
+                        <LivePreview 
+                            creation={activeProject.activeCreation} 
+                            isLoading={isGenerating} 
+                            loadingMessage={generationStatus}
+                            className="w-full h-full"
+                            imageMap={activeProject.imageMap}
+                            onUpdateArtifact={(id, html) => handleUpdateArtifact(id, html)}
+                            isLive={isLiveActive}
+                            onToggleLive={() => setIsLiveActive(!isLiveActive)}
+                        />
+                    </div>
+                    <div className="h-1/2 w-full relative transition-all duration-500 animate-in fade-in slide-in-from-bottom-10">
+                         <LivePulse 
+                            isActive={isLiveActive} 
+                            onClose={() => setIsLiveActive(false)}
+                            currentHtml={activeProject.activeCreation?.html}
+                            onUpdateHtml={(newHtml) => {
+                                if (activeProject.activeCreation?.id) {
+                                    handleUpdateArtifact(activeProject.activeCreation.id, newHtml);
+                                }
+                            }}
+                            mode="panel" 
+                        />
+                    </div>
+                </>
+            ) : (
+                // FULL SCREEN PREVIEW
+                <div className="flex-1 h-full w-full">
+                    <LivePreview 
+                        creation={activeProject.activeCreation} 
+                        isLoading={isGenerating} 
+                        loadingMessage={generationStatus}
+                        className="w-full h-full shadow-2xl"
+                        imageMap={activeProject.imageMap}
+                        onUpdateArtifact={(id, html) => handleUpdateArtifact(id, html)}
+                        isLive={isLiveActive}
+                        onToggleLive={() => setIsLiveActive(!isLiveActive)}
+                    />
+                </div>
+            )}
         </div>
 
         {/* Mobile Preview Overlay (Only visible on small screens when artifact is active) */}
@@ -378,21 +415,26 @@ const App: React.FC = () => {
                     loadingMessage={generationStatus}
                     imageMap={activeProject.imageMap}
                     onUpdateArtifact={(id, html) => handleUpdateArtifact(id, html)}
+                    isLive={isLiveActive}
+                    onToggleLive={() => setIsLiveActive(!isLiveActive)}
                 />
             </div>
         )}
 
-        {/* Live Pulse Assistant Overlay */}
-        <LivePulse 
-            isActive={isLiveActive} 
-            onClose={() => setIsLiveActive(false)}
-            currentHtml={activeProject.activeCreation?.html}
-            onUpdateHtml={(newHtml) => {
-                if (activeProject.activeCreation?.id) {
-                    handleUpdateArtifact(activeProject.activeCreation.id, newHtml);
-                }
-            }} 
-        />
+        {/* Live Pulse Assistant Overlay - MOBILE ONLY */}
+        {/* On Desktop, it's embedded in the split view above */}
+        <div className="md:hidden">
+            <LivePulse 
+                isActive={isLiveActive} 
+                onClose={() => setIsLiveActive(false)}
+                currentHtml={activeProject.activeCreation?.html}
+                onUpdateHtml={(newHtml) => {
+                    if (activeProject.activeCreation?.id) {
+                        handleUpdateArtifact(activeProject.activeCreation.id, newHtml);
+                    }
+                }} 
+            />
+        </div>
     </div>
   );
 };

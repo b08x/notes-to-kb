@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 import React, { useEffect, useState, useRef, useMemo } from 'react';
-import { ArrowDownTrayIcon, CodeBracketIcon, DocumentTextIcon, PencilIcon, CheckIcon, XMarkIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon, PaintBrushIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon, SparklesIcon } from '@heroicons/react/24/outline';
+import { ArrowDownTrayIcon, CodeBracketIcon, DocumentTextIcon, PencilIcon, CheckIcon, XMarkIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon, PaintBrushIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon, SparklesIcon, BoltIcon } from '@heroicons/react/24/outline';
 import { Creation } from './CreationHistory';
 import { DocxGenerator } from '../lib/services/DocxGenerator';
 
@@ -15,6 +15,8 @@ interface LivePreviewProps {
   className?: string;
   imageMap?: Record<string, string>; // Map ID -> Data URL
   onUpdateArtifact?: (id: string, html: string) => void;
+  isLive?: boolean;
+  onToggleLive?: () => void;
 }
 
 // Add type definition for the global pdfjsLib
@@ -76,7 +78,7 @@ const rgbToHex = (rgb: string) => {
     return "#" + r + g + b;
 };
 
-export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, loadingMessage, className = "", imageMap = {}, onUpdateArtifact }) => {
+export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, loadingMessage, className = "", imageMap = {}, onUpdateArtifact, isLive, onToggleLive }) => {
     const [isExporting, setIsExporting] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
     const [showStyleEditor, setShowStyleEditor] = useState(false);
@@ -508,6 +510,19 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
                             <span>Cancel</span>
                         </button>
                     </>
+                )}
+
+                <div className="w-px h-4 bg-zinc-800 mx-1"></div>
+
+                {onToggleLive && (
+                    <button 
+                        onClick={onToggleLive}
+                        className={`flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors border ${isLive ? 'bg-red-500/10 text-red-400 border-red-500/20 hover:bg-red-500/20' : 'text-zinc-300 hover:bg-zinc-800 border-transparent hover:border-zinc-700'}`}
+                        title={isLive ? "Stop Live Session" : "Start Live Editing"}
+                    >
+                        <BoltIcon className={`w-3.5 h-3.5 ${isLive ? 'animate-pulse' : ''}`} />
+                        <span>{isLive ? 'Live Active' : 'Live Edit'}</span>
+                    </button>
                 )}
 
                 <div className="w-px h-4 bg-zinc-800 mx-1"></div>
