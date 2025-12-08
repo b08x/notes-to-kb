@@ -1,9 +1,10 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
 import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
-import { KB_ARTICLE_SYSTEM_INSTRUCTION, GENERIC_SYSTEM_INSTRUCTION } from "../lib/prompts/kb-article";
+import { getSystemInstruction, GENERIC_SYSTEM_INSTRUCTION } from "../lib/prompts/kb-article";
 
 // Using gemini-3-pro-preview for complex coding tasks.
 const GEMINI_MODEL = 'gemini-3-pro-preview';
@@ -25,7 +26,8 @@ export interface Attachment {
 export async function bringToLife(
     history: ChatMessage[], 
     currentPrompt: string, 
-    attachments: Attachment[] = []
+    attachments: Attachment[] = [],
+    templateType: string = 'auto'
 ): Promise<string> {
   const parts: any[] = [];
   
@@ -57,10 +59,16 @@ export async function bringToLife(
                       combinedText.includes("servicenow") ||
                       combinedText.includes("guide");
 
-  const systemInstruction = isKBContext ? KB_ARTICLE_SYSTEM_INSTRUCTION : GENERIC_SYSTEM_INSTRUCTION;
+  // Logic: If explicitly asking for generic generation (e.g. "make a game"), use Generic.
+  // Otherwise, if it's KB context OR a specific KB template is selected, use KB logic.
+  let systemInstruction = GENERIC_SYSTEM_INSTRUCTION;
+  
+  if (isKBContext || templateType !== 'auto') {
+      systemInstruction = getSystemInstruction(templateType, combinedText);
+  }
 
   let finalPrompt = attachments.length > 0
-    ? `NEW REQUEST: ${currentPrompt || (isKBContext ? "Convert these documents into a ServiceNow KB Article." : "Bring this idea to life.")}`
+    ? `NEW REQUEST: ${currentPrompt || (isKBContext ? `Convert these documents into a ${templateType === 'auto' ? 'ServiceNow KB Article' : templateType.toUpperCase() + ' document'}.` : "Bring this idea to life.")}`
     : `NEW REQUEST: ${currentPrompt}`;
 
   // Inject Image IDs into the prompt text if provided

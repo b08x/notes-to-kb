@@ -1,12 +1,13 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
 import React, { useCallback, useState, useEffect, useRef } from 'react';
-import { ArrowUpTrayIcon, SparklesIcon, CpuChipIcon, MicrophoneIcon, PaperAirplaneIcon, DocumentDuplicateIcon } from '@heroicons/react/24/outline';
+import { ArrowUpTrayIcon, SparklesIcon, CpuChipIcon, MicrophoneIcon, PaperAirplaneIcon, DocumentDuplicateIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
 
 interface InputAreaProps {
-  onGenerate: (prompt: string, files?: File[]) => void;
+  onGenerate: (prompt: string, files?: File[], template?: string) => void;
   isGenerating: boolean;
   disabled?: boolean;
 }
@@ -46,6 +47,7 @@ export const InputArea: React.FC<InputAreaProps> = ({ onGenerate, isGenerating, 
   const [isDragging, setIsDragging] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [isListening, setIsListening] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState('auto');
   const recognitionRef = useRef<any>(null);
 
   const handleFiles = (files: FileList | File[]) => {
@@ -53,7 +55,7 @@ export const InputArea: React.FC<InputAreaProps> = ({ onGenerate, isGenerating, 
     const validFiles = fileArray.filter(file => file.type.startsWith('image/') || file.type === 'application/pdf');
     
     if (validFiles.length > 0) {
-      onGenerate(prompt, validFiles);
+      onGenerate(prompt, validFiles, selectedTemplate);
     } else {
       alert("Please upload valid images or PDFs.");
     }
@@ -72,7 +74,7 @@ export const InputArea: React.FC<InputAreaProps> = ({ onGenerate, isGenerating, 
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       handleFiles(e.dataTransfer.files);
     }
-  }, [disabled, isGenerating, prompt]); // Added prompt dependency to pass generic prompt with files if existing
+  }, [disabled, isGenerating, prompt, selectedTemplate]);
 
   const handleDragOver = useCallback((e: React.DragEvent<HTMLLabelElement>) => {
     e.preventDefault();
@@ -137,7 +139,7 @@ export const InputArea: React.FC<InputAreaProps> = ({ onGenerate, isGenerating, 
 
   const handleTextSubmit = () => {
     if (!prompt.trim() || isGenerating) return;
-    onGenerate(prompt);
+    onGenerate(prompt, undefined, selectedTemplate);
     setPrompt("");
   };
 
@@ -220,6 +222,23 @@ export const InputArea: React.FC<InputAreaProps> = ({ onGenerate, isGenerating, 
 
       {/* Input Bar for Text/Voice Start */}
       <div className="w-full bg-zinc-900/50 border border-zinc-800 rounded-xl p-2 flex items-center gap-2 backdrop-blur-sm transition-colors focus-within:border-zinc-600 focus-within:bg-zinc-900/80">
+         {/* Template Selector */}
+         <div className="relative flex items-center border-r border-zinc-800 pr-2">
+            <select 
+                value={selectedTemplate}
+                onChange={(e) => setSelectedTemplate(e.target.value)}
+                className="appearance-none bg-transparent text-zinc-300 text-sm pl-2 pr-8 py-2 focus:outline-none cursor-pointer hover:text-white"
+                disabled={isGenerating}
+            >
+                <option value="auto">Auto-Detect</option>
+                <option value="troubleshooting">Troubleshooting</option>
+                <option value="howto">How-To Guide</option>
+                <option value="faq">FAQ</option>
+                <option value="sop">SOP Policy</option>
+            </select>
+            <ChevronDownIcon className="w-3 h-3 text-zinc-500 absolute right-4 pointer-events-none" />
+         </div>
+
          <button 
             onClick={toggleListening} 
             className={`p-3 rounded-lg hover:bg-zinc-800 transition-colors ${isListening ? 'text-red-500 animate-pulse bg-red-500/10' : 'text-zinc-400'}`}
