@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 import React, { useEffect, useState, useRef, useMemo } from 'react';
-import { ArrowDownTrayIcon, CodeBracketIcon, DocumentTextIcon, PencilIcon, CheckIcon, XMarkIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon, PaintBrushIcon } from '@heroicons/react/24/outline';
+import { ArrowDownTrayIcon, CodeBracketIcon, DocumentTextIcon, PencilIcon, CheckIcon, XMarkIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon, PaintBrushIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon } from '@heroicons/react/24/outline';
 import { Creation } from './CreationHistory';
 import { DocxGenerator } from '../lib/services/DocxGenerator';
 
@@ -79,6 +79,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, c
     const [isExporting, setIsExporting] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
     const [showStyleEditor, setShowStyleEditor] = useState(false);
+    const [isFullScreen, setIsFullScreen] = useState(false);
     const [selectedEl, setSelectedEl] = useState<HTMLElement | null>(null);
     const [styleValues, setStyleValues] = useState({
         color: '#000000',
@@ -86,7 +87,9 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, c
         fontSize: '',
         padding: '',
         margin: '',
-        borderRadius: ''
+        borderRadius: '',
+        maxWidth: '',
+        boxShadow: ''
     });
 
     const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -217,11 +220,6 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, c
                 if (style) style.remove();
                 doc.querySelectorAll('.kb-style-selected').forEach(el => el.classList.remove('kb-style-selected'));
                 doc.querySelectorAll('.kb-style-hover').forEach(el => el.classList.remove('kb-style-hover'));
-                
-                // Remove listeners if they were attached
-                // Note: We use named functions in the scope of setupStyleEditor, so we can't easily remove them 
-                // unless we keep references. Since we recreate them on each run, we need a way to clean up previous.
-                // Simplified: We rely on the effect return cleanup.
             };
 
             if (showStyleEditor) {
@@ -308,7 +306,9 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, c
             fontSize: comp.fontSize,
             padding: comp.padding,
             margin: comp.margin,
-            borderRadius: comp.borderRadius
+            borderRadius: comp.borderRadius,
+            maxWidth: comp.maxWidth,
+            boxShadow: comp.boxShadow
         });
     }, [selectedEl]);
 
@@ -431,7 +431,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, c
     }
 
   return (
-    <div className={`flex flex-col h-full bg-[#121214] border-l border-zinc-800 ${className}`}>
+    <div className={`flex flex-col h-full bg-[#121214] border-l border-zinc-800 ${className} ${isFullScreen ? '!fixed !inset-0 !z-[100] !w-screen !h-screen !border-0' : ''}`}>
       {/* Header */}
       <div className="h-14 flex items-center justify-between px-4 border-b border-zinc-800 bg-[#121214] shrink-0">
         <div className="flex items-center space-x-2">
@@ -530,6 +530,20 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, c
                     title="Export JSON"
                 >
                     <ArrowDownTrayIcon className="w-4 h-4" />
+                </button>
+
+                <div className="w-px h-4 bg-zinc-800 mx-1"></div>
+
+                <button 
+                    onClick={() => setIsFullScreen(!isFullScreen)}
+                    className="p-1.5 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-md transition-colors"
+                    title={isFullScreen ? "Exit Full Screen" : "Enter Full Screen"}
+                >
+                    {isFullScreen ? (
+                        <ArrowsPointingInIcon className="w-4 h-4" />
+                    ) : (
+                        <ArrowsPointingOutIcon className="w-4 h-4" />
+                    )}
                 </button>
             </div>
         )}
@@ -630,6 +644,37 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, c
                                 placeholder="4px"
                              />
                         </div>
+
+                        {/* Image Specific Controls */}
+                        {selectedEl.tagName === 'IMG' && (
+                             <>
+                                <div className="mt-3 pt-3 border-t border-zinc-700/50">
+                                    <h4 className="text-[10px] font-bold text-zinc-300 mb-2 uppercase tracking-wider">Image Styles</h4>
+                                    <div className="grid grid-cols-2 gap-2 mb-2">
+                                        <div>
+                                            <label className="block text-[10px] text-zinc-400 mb-1">Max Width</label>
+                                            <input 
+                                                type="text" 
+                                                value={styleValues.maxWidth}
+                                                onChange={(e) => handleStyleChange('maxWidth', e.target.value)}
+                                                className="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:border-blue-500"
+                                                placeholder="100%"
+                                            />
+                                        </div>
+                                         <div>
+                                            <label className="block text-[10px] text-zinc-400 mb-1">Shadow</label>
+                                            <input 
+                                                type="text" 
+                                                value={styleValues.boxShadow}
+                                                onChange={(e) => handleStyleChange('boxShadow', e.target.value)}
+                                                className="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:border-blue-500"
+                                                placeholder="none"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                             </>
+                        )}
                     </div>
                 ) : (
                     <div className="py-8 text-center">
