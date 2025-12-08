@@ -259,8 +259,15 @@ export class LiveClient {
     this.stopAudioPlayback();
     this.inputSource?.disconnect();
     this.processor?.disconnect();
-    this.inputAudioContext?.close();
-    this.outputAudioContext?.close();
+    
+    if (this.inputAudioContext && this.inputAudioContext.state !== 'closed') {
+       this.inputAudioContext.close().catch(e => console.warn("Failed to close input audio context", e));
+    }
+
+    if (this.outputAudioContext && this.outputAudioContext.state !== 'closed') {
+       this.outputAudioContext.close().catch(e => console.warn("Failed to close output audio context", e));
+    }
+    
     this.sessionPromise = null;
   }
 
