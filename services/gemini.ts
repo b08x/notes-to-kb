@@ -13,16 +13,19 @@ const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 export interface ChatMessage {
     role: 'user' | 'model';
     text: string;
-    image?: string; // base64
-    mimeType?: string;
+    images?: { data: string; mimeType: string }[];
+}
+
+export interface Attachment {
+    data: string; // base64
+    mimeType: string;
+    id?: string;
 }
 
 export async function bringToLife(
     history: ChatMessage[], 
     currentPrompt: string, 
-    fileBase64?: string, 
-    mimeType?: string,
-    fileId?: string
+    attachments: Attachment[] = []
 ): Promise<string> {
   const parts: any[] = [];
   
@@ -31,12 +34,14 @@ export async function bringToLife(
       parts.push({ text: "HISTORY OF CONVERSATION:\n" });
       history.forEach(msg => {
           parts.push({ text: `${msg.role.toUpperCase()}: ${msg.text}\n` });
-          if (msg.image && msg.mimeType) {
-              parts.push({
-                  inlineData: {
-                      data: msg.image,
-                      mimeType: msg.mimeType
-                  }
+          if (msg.images && msg.images.length > 0) {
+              msg.images.forEach(img => {
+                  parts.push({
+                      inlineData: {
+                          data: img.data,
+                          mimeType: img.mimeType
+                      }
+                  });
               });
           }
       });
@@ -44,7 +49,6 @@ export async function bringToLife(
   }
 
   // Determine context to select the right prompt
-  // In a real app, this might be a UI toggle, but we'll use keyword detection for now
   const combinedText = (currentPrompt + " " + history.map(h => h.text).join(" ")).toLowerCase();
   const isKBContext = combinedText.includes("kb") || 
                       combinedText.includes("article") || 
@@ -55,25 +59,29 @@ export async function bringToLife(
 
   const systemInstruction = isKBContext ? KB_ARTICLE_SYSTEM_INSTRUCTION : GENERIC_SYSTEM_INSTRUCTION;
 
-  let finalPrompt = fileBase64 
-    ? `NEW REQUEST: ${currentPrompt || (isKBContext ? "Convert this document into a ServiceNow KB Article." : "Bring this idea to life.")}`
+  let finalPrompt = attachments.length > 0
+    ? `NEW REQUEST: ${currentPrompt || (isKBContext ? "Convert these documents into a ServiceNow KB Article." : "Bring this idea to life.")}`
     : `NEW REQUEST: ${currentPrompt}`;
 
-  // Inject Image ID into the prompt text if provided
-  if (fileBase64 && fileId) {
-      finalPrompt = `[System: The following image has ID: "${fileId}"]\n` + finalPrompt;
+  // Inject Image IDs into the prompt text if provided
+  if (attachments.length > 0) {
+      const ids = attachments.filter(a => a.id).map(a => `ID: "${a.id}"`).join(", ");
+      if (ids) {
+          finalPrompt = `[System: The following images have IDs: ${ids}]\n` + finalPrompt;
+      }
   }
 
   parts.push({ text: finalPrompt });
 
-  if (fileBase64 && mimeType) {
-    parts.push({
-      inlineData: {
-        data: fileBase64,
-        mimeType: mimeType,
-      },
-    });
-  }
+  // Add all current attachments
+  attachments.forEach(att => {
+      parts.push({
+          inlineData: {
+              data: att.data,
+              mimeType: att.mimeType,
+          },
+      });
+  });
 
   try {
     const response: GenerateContentResponse = await ai.models.generateContent({

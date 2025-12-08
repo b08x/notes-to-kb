@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 import React, { useState, useRef, useEffect } from 'react';
-import { PaperAirplaneIcon, PaperClipIcon, CodeBracketIcon, SparklesIcon, PhotoIcon, CameraIcon, PencilSquareIcon, MicrophoneIcon } from '@heroicons/react/24/outline';
+import { PaperAirplaneIcon, PaperClipIcon, CodeBracketIcon, SparklesIcon, PhotoIcon, CameraIcon, PencilSquareIcon, MicrophoneIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { Creation } from './CreationHistory';
 
 export interface Message {
@@ -12,16 +12,16 @@ export interface Message {
   content: string;
   timestamp: Date;
   artifact?: Creation; // If the model generated something, it's attached here
-  attachment?: {
+  attachments?: {
     type: 'image' | 'pdf';
     url: string;
     category?: 'source' | 'screenshot';
-  };
+  }[];
 }
 
 interface ChatProps {
   messages: Message[];
-  onSendMessage: (text: string, file?: File, fileType?: 'source' | 'screenshot') => void;
+  onSendMessage: (text: string, files?: File[], fileType?: 'source' | 'screenshot') => void;
   isGenerating: boolean;
   onSelectArtifact: (creation: Creation) => void;
   activeArtifactId?: string;
@@ -36,7 +36,7 @@ export const Chat: React.FC<ChatProps> = ({
 }) => {
   const [input, setInput] = useState('');
   const [dragActive, setDragActive] = useState(false);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [uploadType, setUploadType] = useState<'source' | 'screenshot'>('source');
   
   const [isListening, setIsListening] = useState(false);
@@ -109,12 +109,12 @@ export const Chat: React.FC<ChatProps> = ({
 
   const handleSubmit = (e?: React.FormEvent) => {
     e?.preventDefault();
-    if ((!input.trim() && !selectedFile) || isGenerating) return;
+    if ((!input.trim() && selectedFiles.length === 0) || isGenerating) return;
     
-    // Default to 'source' if not specified, but usually set by the button used
-    onSendMessage(input, selectedFile || undefined, selectedFile ? uploadType : undefined);
+    // Default to 'source' if not specified
+    onSendMessage(input, selectedFiles.length > 0 ? selectedFiles : undefined, selectedFiles.length > 0 ? uploadType : undefined);
     setInput('');
-    setSelectedFile(null);
+    setSelectedFiles([]);
     setUploadType('source'); // Reset to default
   };
 
@@ -133,17 +133,27 @@ export const Chat: React.FC<ChatProps> = ({
     e.stopPropagation();
     setDragActive(false);
     
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      setSelectedFile(e.dataTransfer.files[0]);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      setSelectedFiles(Array.from(e.dataTransfer.files));
       setUploadType('source'); // Default drag-and-drop to source
     }
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>, type: 'source' | 'screenshot') => {
-    if (e.target.files && e.target.files[0]) {
-      setSelectedFile(e.target.files[0]);
+    if (e.target.files && e.target.files.length > 0) {
+      // Append files or replace? Let's append if type matches, or replace if different type (simpler UX for now to replace to avoid mixed types)
+      setSelectedFiles(prev => {
+          if (uploadType !== type) return Array.from(e.target.files!);
+          return [...prev, ...Array.from(e.target.files!)];
+      });
       setUploadType(type);
     }
+    // Reset value to allow selecting same files again
+    e.target.value = '';
+  };
+
+  const removeFile = (index: number) => {
+      setSelectedFiles(prev => prev.filter((_, i) => i !== index));
   };
 
   const handleSuggestion = (prompt: string) => {
@@ -179,26 +189,30 @@ export const Chat: React.FC<ChatProps> = ({
                   }
                 `}
               >
-                {/* Attachment Preview */}
-                {msg.attachment && (
-                    <div className="mb-3 rounded-lg overflow-hidden border border-white/10 bg-black/20">
-                         {msg.attachment.type === 'image' && (
-                             <div className="relative">
-                               <img src={msg.attachment.url} className="max-w-full max-h-48 object-cover" alt="User upload" />
-                               {msg.attachment.category && (
-                                 <span className="absolute bottom-1 right-1 px-1.5 py-0.5 bg-black/60 text-[10px] text-white rounded backdrop-blur-sm uppercase">
-                                   {msg.attachment.category}
-                                 </span>
-                               )}
+                {/* Attachments Preview */}
+                {msg.attachments && msg.attachments.length > 0 && (
+                    <div className="mb-3 flex flex-wrap gap-2">
+                         {msg.attachments.map((att, idx) => (
+                             <div key={idx} className="rounded-lg overflow-hidden border border-white/10 bg-black/20 max-w-[200px]">
+                                {att.type === 'image' && (
+                                     <div className="relative">
+                                       <img src={att.url} className="w-full h-auto max-h-48 object-cover" alt={`Attachment ${idx}`} />
+                                       {att.category && (
+                                         <span className="absolute bottom-1 right-1 px-1.5 py-0.5 bg-black/60 text-[10px] text-white rounded backdrop-blur-sm uppercase">
+                                           {att.category}
+                                         </span>
+                                       )}
+                                     </div>
+                                 )}
+                                 {att.type === 'pdf' && (
+                                     <div className="flex items-center gap-2 p-3 text-xs font-mono">
+                                         <PhotoIcon className="w-4 h-4" />
+                                         PDF Doc
+                                         <span className="ml-auto px-1.5 py-0.5 bg-white/10 rounded uppercase">Source</span>
+                                     </div>
+                                 )}
                              </div>
-                         )}
-                         {msg.attachment.type === 'pdf' && (
-                             <div className="flex items-center gap-2 p-3 text-xs font-mono">
-                                 <PhotoIcon className="w-4 h-4" />
-                                 PDF Document
-                                 <span className="ml-auto px-1.5 py-0.5 bg-white/10 rounded uppercase">Source</span>
-                             </div>
-                         )}
+                         ))}
                     </div>
                 )}
                 {msg.content}
@@ -270,6 +284,21 @@ export const Chat: React.FC<ChatProps> = ({
           </div>
         )}
 
+        {/* Selected Files Preview Chip Area */}
+        {selectedFiles.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-2 px-1">
+                {selectedFiles.map((file, idx) => (
+                    <div key={idx} className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded border animate-in fade-in slide-in-from-bottom-2 duration-300 ${uploadType === 'screenshot' ? 'bg-purple-500/10 border-purple-500/30 text-purple-200' : 'bg-blue-500/10 border-blue-500/30 text-blue-200'}`}>
+                        <div className="flex items-center gap-1.5 truncate max-w-[150px]">
+                            {uploadType === 'screenshot' ? <CameraIcon className="w-3 h-3 flex-shrink-0" /> : <PaperClipIcon className="w-3 h-3 flex-shrink-0" />}
+                            <span className="truncate">{file.name}</span>
+                        </div>
+                        <button onClick={() => removeFile(idx)} className="opacity-60 hover:opacity-100 ml-1 rounded-full hover:bg-white/10 p-0.5"><XMarkIcon className="w-3 h-3" /></button>
+                    </div>
+                ))}
+            </div>
+        )}
+
         <form 
             onSubmit={handleSubmit}
             className={`
@@ -283,7 +312,7 @@ export const Chat: React.FC<ChatProps> = ({
         >
           {dragActive && (
               <div className="absolute inset-0 z-10 flex items-center justify-center bg-zinc-900/90 backdrop-blur-sm rounded-xl">
-                  <span className="text-blue-400 font-medium">Drop to upload source</span>
+                  <span className="text-blue-400 font-medium">Drop to upload files</span>
               </div>
           )}
 
@@ -292,8 +321,8 @@ export const Chat: React.FC<ChatProps> = ({
             <button
               type="button"
               onClick={() => screenshotInputRef.current?.click()}
-              className={`p-2 rounded-lg transition-colors ${selectedFile && uploadType === 'screenshot' ? 'bg-purple-500/20 text-purple-400' : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'}`}
-              title="Upload Context Screenshot"
+              className={`p-2 rounded-lg transition-colors ${selectedFiles.length > 0 && uploadType === 'screenshot' ? 'bg-purple-500/20 text-purple-400' : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'}`}
+              title="Upload Context Screenshots"
             >
               <CameraIcon className="w-5 h-5" />
             </button>
@@ -305,6 +334,7 @@ export const Chat: React.FC<ChatProps> = ({
                type="file" 
                className="hidden" 
                accept="image/*"
+               multiple
                onChange={(e) => handleFileSelect(e, 'screenshot')}
             />
           </div>
@@ -314,7 +344,7 @@ export const Chat: React.FC<ChatProps> = ({
             <button
               type="button"
               onClick={() => sourceInputRef.current?.click()}
-              className={`p-2 rounded-lg transition-colors ${selectedFile && uploadType === 'source' ? 'bg-blue-500/20 text-blue-400' : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'}`}
+              className={`p-2 rounded-lg transition-colors ${selectedFiles.length > 0 && uploadType === 'source' ? 'bg-blue-500/20 text-blue-400' : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'}`}
               title="Upload Source (Notes/PDF)"
             >
               <PaperClipIcon className="w-5 h-5" />
@@ -327,21 +357,13 @@ export const Chat: React.FC<ChatProps> = ({
                type="file" 
                className="hidden" 
                accept="image/*,application/pdf"
+               multiple
                onChange={(e) => handleFileSelect(e, 'source')}
             />
           </div>
 
           {/* Text Input */}
           <div className="flex-1 min-w-0 flex flex-col">
-              {selectedFile && (
-                  <div className={`flex items-center justify-between text-xs px-2 py-1 rounded mb-1 border ${uploadType === 'screenshot' ? 'bg-purple-500/10 border-purple-500/30 text-purple-200' : 'bg-blue-500/10 border-blue-500/30 text-blue-200'}`}>
-                      <div className="flex items-center gap-1.5 truncate max-w-[200px]">
-                        {uploadType === 'screenshot' ? <CameraIcon className="w-3 h-3" /> : <PaperClipIcon className="w-3 h-3" />}
-                        <span className="truncate">{selectedFile.name}</span>
-                      </div>
-                      <button onClick={() => { setSelectedFile(null); setUploadType('source'); }} className="opacity-60 hover:opacity-100 ml-2">×</button>
-                  </div>
-              )}
               <textarea
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
@@ -377,10 +399,10 @@ export const Chat: React.FC<ChatProps> = ({
           {/* Send Button */}
           <button
             type="submit"
-            disabled={(!input.trim() && !selectedFile) || isGenerating}
+            disabled={(!input.trim() && selectedFiles.length === 0) || isGenerating}
             className={`
                 p-2 rounded-lg transition-all
-                ${(!input.trim() && !selectedFile) || isGenerating
+                ${(!input.trim() && selectedFiles.length === 0) || isGenerating
                     ? 'bg-zinc-800 text-zinc-600' 
                     : 'bg-blue-600 text-white hover:bg-blue-500 shadow-lg shadow-blue-900/20'
                 }

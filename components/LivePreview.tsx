@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 import React, { useEffect, useState, useRef, useMemo } from 'react';
-import { ArrowDownTrayIcon, CodeBracketIcon, DocumentTextIcon, PencilIcon, CheckIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { ArrowDownTrayIcon, CodeBracketIcon, DocumentTextIcon, PencilIcon, CheckIcon, XMarkIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon } from '@heroicons/react/24/outline';
 import { Creation } from './CreationHistory';
 import { DocxGenerator } from '../lib/services/DocxGenerator';
 
@@ -126,6 +126,14 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, c
         iframe.onload = toggleEdit;
     }, [isEditing, processedHtml]);
 
+    const handleUndo = () => {
+        iframeRef.current?.contentDocument?.execCommand('undo');
+    };
+
+    const handleRedo = () => {
+        iframeRef.current?.contentDocument?.execCommand('redo');
+    };
+
     const handleSaveEdit = () => {
         if (!iframeRef.current?.contentDocument) return;
         const doc = iframeRef.current.contentDocument;
@@ -243,6 +251,24 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, c
                     </button>
                 ) : (
                     <>
+                        {/* Undo / Redo */}
+                         <div className="flex items-center space-x-1 border-r border-zinc-800 pr-2 mr-1">
+                            <button
+                                onClick={handleUndo}
+                                className="p-1.5 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-md transition-colors"
+                                title="Undo"
+                            >
+                                <ArrowUturnLeftIcon className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                                onClick={handleRedo}
+                                className="p-1.5 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-md transition-colors"
+                                title="Redo"
+                            >
+                                <ArrowUturnRightIcon className="w-3.5 h-3.5" />
+                            </button>
+                        </div>
+
                          <button 
                             onClick={handleSaveEdit}
                             className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium text-emerald-400 hover:bg-emerald-500/10 rounded-md transition-colors border border-emerald-500/20"

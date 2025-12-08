@@ -4,7 +4,7 @@
 */
 import React, { useState, useEffect, useMemo } from 'react';
 import { Creation } from './components/CreationHistory';
-import { bringToLife, ChatMessage } from './services/gemini';
+import { bringToLife, ChatMessage, Attachment } from './services/gemini';
 import { Chat, Message } from './components/Chat';
 import { LivePreview } from './components/LivePreview';
 import { InputArea } from './components/InputArea';
@@ -52,7 +52,7 @@ const App: React.FC = () => {
       });
   };
 
-  const handleSendMessage = async (text: string, file?: File, fileType: 'source' | 'screenshot' = 'source') => {
+  const handleSendMessage = async (text: string, files: File[] = [], fileType: 'source' | 'screenshot' = 'source') => {
     setIsGenerating(true);
     
     const messageId = crypto.randomUUID();
@@ -61,54 +61,59 @@ const App: React.FC = () => {
         role: 'user',
         content: text,
         timestamp: new Date(),
-        attachment: file ? {
-            type: file.type === 'application/pdf' ? 'pdf' : 'image',
-            url: URL.createObjectURL(file),
+        attachments: files.length > 0 ? files.map(f => ({
+            type: f.type === 'application/pdf' ? 'pdf' : 'image',
+            url: URL.createObjectURL(f),
             category: fileType
-        } : undefined
+        })) : undefined
     };
 
     setMessages(prev => [...prev, newUserMsg]);
 
     try {
-      let imageBase64: string | undefined;
-      let mimeType: string | undefined;
+      // Prepare attachments for Gemini
+      const geminiAttachments: Attachment[] = [];
 
-      if (file) {
-        imageBase64 = await fileToBase64(file);
-        mimeType = file.type.toLowerCase();
-        
-        // Always add images to imageMap for reference, regardless of category
-        if (file.type.startsWith('image/')) {
-            setImageMap(prev => ({
-                ...prev,
-                [messageId]: `data:${file.type};base64,${imageBase64}`
-            }));
-        }
+      for (const file of files) {
+          try {
+              const base64 = await fileToBase64(file);
+              const id = `img-${crypto.randomUUID().substring(0, 8)}`; // Generate short ID for prompt ref
+              
+              geminiAttachments.push({
+                  data: base64,
+                  mimeType: file.type,
+                  id: id
+              });
+
+              // Add to global image map for the live preview to resolve
+              if (file.type.startsWith('image/')) {
+                  setImageMap(prev => ({
+                      ...prev,
+                      [id]: `data:${file.type};base64,${base64}`
+                  }));
+              }
+          } catch (e) {
+              console.error(`Failed to process file ${file.name}`, e);
+          }
       }
 
       // Convert internal Message format to Gemini ChatMessage format
-      // Crucially, we include the content of generated artifacts so the model "remembers" what it built
-      // And we handle image referencing
       const historyForGemini: ChatMessage[] = await Promise.all(messages.map(async m => {
           let textContent = m.content;
-          let histImageBase64: string | undefined;
-          let histMimeType: string | undefined;
+          const histImages: { data: string; mimeType: string }[] = [];
 
-          // If message has an image attachment, prepare it for history
-          if (m.attachment && m.attachment.type === 'image') {
-              // Fetch base64 from the blob URL we stored
-              try {
-                  histImageBase64 = await blobUrlToBase64(m.attachment.url);
-                  histMimeType = 'image/png'; // Default
-                  // Try to get real type
-                  const response = await fetch(m.attachment.url);
-                  histMimeType = (await response.blob()).type;
-
-                  // Inject ID system prompt into history text for context
-                  textContent = `[System: The following image has ID: "${m.id}"]\n${textContent}`;
-              } catch (e) {
-                  console.error("Failed to restore image from history", e);
+          if (m.attachments && m.attachments.length > 0) {
+              for (const att of m.attachments) {
+                  if (att.type === 'image') {
+                      try {
+                        const b64 = await blobUrlToBase64(att.url);
+                        // We attempt to guess mime type from fetch or default
+                        const mime = 'image/png'; // Simplified for history reconstruction
+                        histImages.push({ data: b64, mimeType: mime });
+                      } catch (e) {
+                          console.error("Failed to restore history image", e);
+                      }
+                  }
               }
           }
 
@@ -118,42 +123,56 @@ const App: React.FC = () => {
           return {
               role: m.role,
               text: textContent,
-              image: histImageBase64,
-              mimeType: histMimeType
+              images: histImages
           };
       }));
 
       // CONTEXTUAL PROMPT LOGIC
-      // Based on file type, we give different instructions to the model
+      // Check if we are uploading screenshots (Analysis) or Sources (Generation)
       let modifiedText = text;
+      const isScreenshotAnalysis = files.length > 0 && fileType === 'screenshot';
+      const isSourceUpload = files.length > 0 && fileType === 'source';
       
-      if (file && fileType === 'screenshot') {
-        modifiedText = `[KB CONTEXT ANALYSIS] I am uploading a screenshot for context. Please analyze the UI elements, error messages, and visual state shown in this image. Do not generate the full KB article yet. Instead, generate a "Screenshot Analysis Report" in HTML that lists the observed errors, UI state, and potential issues. This will be used as context for the future KB article.\n\nUser Note: ${text}`;
-      } else if (file && fileType === 'source') {
-        modifiedText = `[KB GENERATION] Here is the source documentation (notes/PDF). Please convert this into a ServiceNow KB Article using the template specifications. Use any previous screenshot analyses in the history as context to enrich the article (e.g., adding specific error codes found in screenshots). If you use a screenshot, reference it by its ID.\n\nUser Note: ${text}`;
-      } else if (!file && messages.some(m => m.attachment?.category === 'screenshot')) {
+      if (isScreenshotAnalysis) {
+        modifiedText = `[KB CONTEXT ANALYSIS] I am uploading screenshots for context. Please analyze the UI elements, error messages, and visual state shown in these images. Do not generate the full KB article yet. Instead, generate a "Screenshot Analysis Report" in HTML that lists the observed errors, UI state, and potential issues. This will be used as context for the future KB article.\n\nUser Note: ${text}`;
+      } else if (isSourceUpload) {
+        modifiedText = `[KB GENERATION] Here are the source documents (notes/PDFs). Please convert them into a ServiceNow KB Article using the template specifications. Use any previous screenshot analyses in the history as context to enrich the article (e.g., adding specific error codes found in screenshots). If you use a screenshot, reference it by its ID provided in the system prompt.\n\nUser Note: ${text}`;
+      } else if (files.length === 0 && messages.some(m => m.attachments?.some(a => a.category === 'screenshot'))) {
           // No file, but we have screenshots in history, likely a refinement request
           modifiedText = `${text}\n\n[System: Remember to use existing image IDs (e.g. img-...) if you need to insert an image.]`;
       }
 
-      // Pass messageId as fileId so bringToLife can inject it into the prompt
-      const html = await bringToLife(historyForGemini, modifiedText, imageBase64, mimeType, messageId);
+      const html = await bringToLife(historyForGemini, modifiedText, geminiAttachments);
       
       const creationId = crypto.randomUUID();
+      
+      // Determine a name for the artifact
+      let artifactName = `Artifact ${new Date().toLocaleTimeString()}`;
+      if (files.length === 1) {
+          artifactName = isScreenshotAnalysis ? `Analysis: ${files[0].name}` : files[0].name;
+      } else if (files.length > 1) {
+          artifactName = isScreenshotAnalysis ? `Analysis: ${files.length} Files` : `KB from ${files.length} Files`;
+      }
+
+      // Pick the first image as the "Original Image" for preview fallback, or undefined
+      const primaryImage = geminiAttachments.length > 0 
+        ? `data:${geminiAttachments[0].mimeType};base64,${geminiAttachments[0].data}` 
+        : undefined;
+
       const newCreation: Creation = {
           id: creationId,
-          name: file ? (fileType === 'screenshot' ? `Analysis: ${file.name}` : file.name) : `Artifact ${new Date().toLocaleTimeString()}`,
+          name: artifactName,
           html: html,
-          originalImage: imageBase64 && mimeType ? `data:${mimeType};base64,${imageBase64}` : undefined,
+          originalImage: primaryImage,
           timestamp: new Date(),
       };
 
       const aiMsg: Message = {
           id: crypto.randomUUID(),
           role: 'model',
-          content: fileType === 'screenshot' 
-              ? "I've analyzed the screenshot and created a context report." 
-              : "I've generated the KB article based on your source and context.",
+          content: isScreenshotAnalysis
+              ? "I've analyzed the screenshots and created a context report." 
+              : "I've generated the KB article based on your sources and context.",
           timestamp: new Date(),
           artifact: newCreation
       };
@@ -205,7 +224,7 @@ const App: React.FC = () => {
                 // Show InputArea (Hero) when no messages
                 <div className="flex-1 flex items-center justify-center p-4 bg-[#0E0E10] border-r border-zinc-800">
                     <InputArea 
-                        onGenerate={(prompt, file) => handleSendMessage(prompt, file, 'source')} 
+                        onGenerate={(prompt, files) => handleSendMessage(prompt, files, 'source')} 
                         isGenerating={isGenerating} 
                     />
                 </div>

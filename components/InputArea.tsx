@@ -3,10 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 import React, { useCallback, useState, useEffect, useRef } from 'react';
-import { ArrowUpTrayIcon, SparklesIcon, CpuChipIcon, MicrophoneIcon, PaperAirplaneIcon } from '@heroicons/react/24/outline';
+import { ArrowUpTrayIcon, SparklesIcon, CpuChipIcon, MicrophoneIcon, PaperAirplaneIcon, DocumentDuplicateIcon } from '@heroicons/react/24/outline';
 
 interface InputAreaProps {
-  onGenerate: (prompt: string, file?: File) => void;
+  onGenerate: (prompt: string, files?: File[]) => void;
   isGenerating: boolean;
   disabled?: boolean;
 }
@@ -15,11 +15,11 @@ const CyclingText = () => {
     const words = [
         "tech support notes",
         "incident logs",
-        "a napkin sketch",
-        "a PDF manual",
+        "napkin sketches",
+        "PDF manuals",
         "meeting minutes",
         "slack threads",
-        "an error screenshot"
+        "error screenshots"
     ];
     const [index, setIndex] = useState(0);
     const [fade, setFade] = useState(true);
@@ -48,17 +48,20 @@ export const InputArea: React.FC<InputAreaProps> = ({ onGenerate, isGenerating, 
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef<any>(null);
 
-  const handleFile = (file: File) => {
-    if (file.type.startsWith('image/') || file.type === 'application/pdf') {
-      onGenerate("", file);
+  const handleFiles = (files: FileList | File[]) => {
+    const fileArray = Array.from(files);
+    const validFiles = fileArray.filter(file => file.type.startsWith('image/') || file.type === 'application/pdf');
+    
+    if (validFiles.length > 0) {
+      onGenerate(prompt, validFiles);
     } else {
-      alert("Please upload an image or PDF.");
+      alert("Please upload valid images or PDFs.");
     }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-        handleFile(e.target.files[0]);
+    if (e.target.files && e.target.files.length > 0) {
+        handleFiles(e.target.files);
     }
   };
 
@@ -66,10 +69,10 @@ export const InputArea: React.FC<InputAreaProps> = ({ onGenerate, isGenerating, 
     e.preventDefault();
     setIsDragging(false);
     if (disabled || isGenerating) return;
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      handleFile(e.dataTransfer.files[0]);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleFiles(e.dataTransfer.files);
     }
-  }, [disabled, isGenerating]);
+  }, [disabled, isGenerating, prompt]); // Added prompt dependency to pass generic prompt with files if existing
 
   const handleDragOver = useCallback((e: React.DragEvent<HTMLLabelElement>) => {
     e.preventDefault();
@@ -182,6 +185,10 @@ export const InputArea: React.FC<InputAreaProps> = ({ onGenerate, isGenerating, 
                             <ArrowUpTrayIcon className={`w-8 h-8 md:w-10 md:h-10 text-zinc-300 transition-all duration-300 ${isDragging ? '-translate-y-1 text-blue-400' : ''}`} />
                         )}
                     </div>
+                    {/* Badge for multiple files hint */}
+                    <div className="absolute -right-3 -top-3 bg-zinc-800 border border-zinc-600 rounded-full p-1.5 shadow-lg">
+                        <DocumentDuplicateIcon className="w-4 h-4 text-zinc-400" />
+                    </div>
                 </div>
 
                 <div className="space-y-2 md:space-y-4 w-full max-w-3xl">
@@ -194,8 +201,8 @@ export const InputArea: React.FC<InputAreaProps> = ({ onGenerate, isGenerating, 
                         <span>into KB Articles</span>
                     </h3>
                     <p className="text-zinc-500 text-xs sm:text-base md:text-lg font-light tracking-wide">
-                        <span className="hidden md:inline">Drag & Drop</span>
-                        <span className="md:hidden">Tap</span> to upload documents or screenshots
+                        <span className="hidden md:inline">Drag & Drop files</span>
+                        <span className="md:hidden">Tap</span> to upload documents (PDF/Images)
                     </p>
                 </div>
             </div>
@@ -204,6 +211,7 @@ export const InputArea: React.FC<InputAreaProps> = ({ onGenerate, isGenerating, 
                 type="file"
                 accept="image/*,application/pdf"
                 className="hidden"
+                multiple
                 onChange={handleFileChange}
                 disabled={isGenerating || disabled}
             />
