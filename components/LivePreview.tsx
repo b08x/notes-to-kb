@@ -79,11 +79,59 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, c
             html = html.replace(regex, `src="${dataUrl}" data-kb-id="${id}"`);
         });
 
-        // Inject Edit Styles if needed
+        // Inject Base Styles + Edit Styles
+        // We include specific image styling here for aesthetic resizing
         const styleTag = `<style id="kb-edit-style">
+            /* Default KB Styles for Preview */
+            body { 
+                font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; 
+                line-height: 1.6; 
+                color: #1f2937; 
+                max-width: 900px; 
+                margin: 0 auto; 
+                padding: 40px; 
+                background-color: #ffffff;
+            }
+            h1 { font-size: 2.25rem; font-weight: 700; letter-spacing: -0.025em; color: #111827; margin-bottom: 0.5rem; }
+            h2 { font-size: 1.5rem; font-weight: 600; color: #1f2937; margin-top: 2.5rem; margin-bottom: 1rem; border-bottom: 1px solid #e5e7eb; padding-bottom: 0.5rem; }
+            h3 { font-size: 1.25rem; font-weight: 600; color: #374151; margin-top: 1.5rem; margin-bottom: 0.75rem; }
+            h4 { font-size: 1.1rem; font-weight: 600; color: #374151; margin-top: 1.25rem; margin-bottom: 0.5rem; }
+            p, li { font-size: 1rem; color: #4b5563; }
+            ul, ol { padding-left: 1.5rem; margin-bottom: 1rem; }
+            li { margin-bottom: 0.5rem; }
+            
+            /* Image Styles - Aesthetic Resizing & Placement */
+            img { 
+                max-width: 85%; 
+                height: auto; 
+                display: block; 
+                margin: 2rem auto; 
+                border-radius: 8px; 
+                box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); 
+                border: 1px solid #f3f4f6;
+                transition: transform 0.2s ease;
+            }
+            img:hover {
+                transform: scale(1.01);
+                box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+            }
+            
+            .metadata { color: #9ca3af; font-size: 0.875rem; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; margin-bottom: 3rem; }
+            
+            /* Warning/Info Boxes */
+            .warning-box, .warning {
+                background-color: #fef2f2;
+                border-left: 4px solid #ef4444;
+                padding: 1rem;
+                margin: 1.5rem 0;
+                border-radius: 0 0.5rem 0.5rem 0;
+            }
+            .warning-box p, .warning p, .warning strong { color: #b91c1c; margin: 0; }
+
+            /* Edit Mode Styles */
             [contenteditable="true"] { outline: none; }
-            [contenteditable="true"]:hover { background: rgba(59, 130, 246, 0.05); cursor: text; }
-            [contenteditable="true"]:focus { background: rgba(59, 130, 246, 0.1); }
+            [contenteditable="true"]:hover { background: rgba(59, 130, 246, 0.05); cursor: text; border-radius: 4px; }
+            [contenteditable="true"]:focus { background: rgba(59, 130, 246, 0.1); border-radius: 4px; }
             body.editing-mode { cursor: text; }
         </style>`;
         

@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -80,12 +81,12 @@ The document follows a **"Triage-First" Linear Flow**. It is designed for Servic
         -   *Rule*: If text refers to a button/key, bold it.
         -   *Example*: Press \`Win + X\` > Select **Device Manager**.
     -   **Visual Asset**:
-        -   Insert \`<img>\` tag centered.
+        -   Insert \`<img>\` tag on its own line (block level).
         -   **Alt Text**: Required. If coordinates were provided in notes, describe the highlight (e.g., "Screenshot with yellow highlight on HDMI port").
 
 #### **D. Visual Layout Rules**
--   **Image Anchoring**: Images must be INLINE.
--   **Spacing**: The generator handles spacing, but ensure your HTML structure is clean (block level elements).
+-   **Image Anchoring**: Images must be placed clearly after the step they illustrate.
+-   **Spacing**: Ensure logical flow.
 
 ---
 
