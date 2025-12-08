@@ -30,6 +30,7 @@ const App: React.FC = () => {
   ]);
   const [activeProjectId, setActiveProjectId] = useState<string>(projects[0].id);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [generationStatus, setGenerationStatus] = useState<string>("");
 
   const activeProject = projects.find(p => p.id === activeProjectId) || projects[0];
 
@@ -95,6 +96,7 @@ const App: React.FC = () => {
 
   const handleSendMessage = async (text: string, files: File[] = [], fileType: 'source' | 'screenshot' = 'source', templateType: string = 'auto') => {
     setIsGenerating(true);
+    setGenerationStatus("Initializing...");
     
     const messageId = crypto.randomUUID();
     const newUserMsg: Message = {
@@ -196,7 +198,29 @@ const App: React.FC = () => {
           modifiedText = `${text}\n\n[System: Remember to use existing image IDs (e.g. img-...) if you need to insert an image.]`;
       }
 
-      const html = await bringToLife(historyForGemini, modifiedText, geminiAttachments, templateType);
+      const html = await bringToLife(historyForGemini, modifiedText, geminiAttachments, templateType, (partialText) => {
+        // Live Assistant Status Logic based on streaming content
+        const lower = partialText.toLowerCase();
+        
+        // Basic heuristics to make the assistant feel "alive"
+        if (lower.length < 50) {
+            setGenerationStatus("Analyzing your inputs...");
+        } else if (lower.includes('<style')) {
+            setGenerationStatus("Designing visual theme...");
+        } else if (lower.includes('<script')) {
+            setGenerationStatus("Coding interactivity...");
+        } else if (lower.includes('<img')) {
+            setGenerationStatus("Embedding assets...");
+        } else if (lower.includes('h2') || lower.includes('h3')) {
+            setGenerationStatus("Structuring content...");
+        } else if (lower.includes('<ul>') || lower.includes('<ol>')) {
+            setGenerationStatus("Drafting procedures...");
+        } else if (lower.length > 500) {
+            setGenerationStatus("Refining details...");
+        } else {
+            setGenerationStatus("Generating content...");
+        }
+      });
       
       const creationId = crypto.randomUUID();
       
@@ -261,6 +285,7 @@ const App: React.FC = () => {
       }));
     } finally {
       setIsGenerating(false);
+      setGenerationStatus("");
     }
   };
 
@@ -328,6 +353,7 @@ const App: React.FC = () => {
             <LivePreview 
                 creation={activeProject.activeCreation} 
                 isLoading={isGenerating} 
+                loadingMessage={generationStatus}
                 className="w-full h-full shadow-2xl"
                 imageMap={activeProject.imageMap}
                 onUpdateArtifact={handleUpdateArtifact}
@@ -346,6 +372,7 @@ const App: React.FC = () => {
                 <LivePreview 
                     creation={activeProject.activeCreation} 
                     isLoading={isGenerating} 
+                    loadingMessage={generationStatus}
                     imageMap={activeProject.imageMap}
                     onUpdateArtifact={handleUpdateArtifact}
                 />

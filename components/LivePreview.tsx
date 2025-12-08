@@ -4,13 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 import React, { useEffect, useState, useRef, useMemo } from 'react';
-import { ArrowDownTrayIcon, CodeBracketIcon, DocumentTextIcon, PencilIcon, CheckIcon, XMarkIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon, PaintBrushIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon } from '@heroicons/react/24/outline';
+import { ArrowDownTrayIcon, CodeBracketIcon, DocumentTextIcon, PencilIcon, CheckIcon, XMarkIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon, PaintBrushIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon, SparklesIcon } from '@heroicons/react/24/outline';
 import { Creation } from './CreationHistory';
 import { DocxGenerator } from '../lib/services/DocxGenerator';
 
 interface LivePreviewProps {
   creation: Creation | null;
   isLoading: boolean;
+  loadingMessage?: string;
   className?: string;
   imageMap?: Record<string, string>; // Map ID -> Data URL
   onUpdateArtifact?: (id: string, html: string) => void;
@@ -75,7 +76,7 @@ const rgbToHex = (rgb: string) => {
     return "#" + r + g + b;
 };
 
-export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, className = "", imageMap = {}, onUpdateArtifact }) => {
+export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, loadingMessage, className = "", imageMap = {}, onUpdateArtifact }) => {
     const [isExporting, setIsExporting] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
     const [showStyleEditor, setShowStyleEditor] = useState(false);
@@ -551,11 +552,38 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, c
 
       {/* Content */}
       <div className="flex-1 relative bg-white w-full overflow-hidden">
+        {/* Rich Live Assistant Overlay */}
         {isLoading && (
-            <div className="absolute inset-0 z-20 bg-black/50 backdrop-blur-sm flex items-center justify-center">
-                <div className="flex flex-col items-center gap-4 text-white">
-                    <div className="w-8 h-8 border-2 border-blue-500/30 border-t-blue-500 rounded-full animate-spin"></div>
-                    <span className="text-xs font-mono animate-pulse">GENERATING ARTIFACT...</span>
+            <div className="absolute inset-0 z-50 bg-[#09090b]/90 backdrop-blur-md flex items-center justify-center animate-in fade-in duration-300">
+                <div className="relative max-w-sm w-full p-8 rounded-2xl bg-zinc-900 border border-zinc-800 shadow-2xl flex flex-col items-center text-center">
+                    
+                    {/* Animated Avatar */}
+                    <div className="relative mb-6">
+                        <div className="w-16 h-16 rounded-full bg-blue-500/10 flex items-center justify-center border border-blue-500/20">
+                            <SparklesIcon className="w-8 h-8 text-blue-400 animate-pulse" />
+                        </div>
+                        {/* Orbiting dots */}
+                        <div className="absolute inset-0 animate-spin-slow opacity-50">
+                            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-blue-400 rounded-full shadow-[0_0_10px_rgba(96,165,250,0.8)]"></div>
+                        </div>
+                        <div className="absolute inset-0 animate-spin-reverse-slower opacity-30">
+                            <div className="absolute bottom-1 right-1 w-1 h-1 bg-purple-400 rounded-full"></div>
+                        </div>
+                    </div>
+
+                    <h3 className="text-lg font-bold text-white mb-2 tracking-tight">Assistant Working</h3>
+                    
+                    {/* Live Progress Text */}
+                    <div className="h-12 flex items-center justify-center w-full">
+                        <p className="text-zinc-400 text-sm animate-pulse font-mono">
+                            {loadingMessage || "Initializing generation..."}
+                        </p>
+                    </div>
+
+                    {/* Simple Progress Bar */}
+                    <div className="w-full h-1 bg-zinc-800 rounded-full mt-4 overflow-hidden">
+                        <div className="h-full bg-gradient-to-r from-blue-600 to-purple-600 w-1/2 animate-[shimmer_2s_infinite]"></div>
+                    </div>
                 </div>
             </div>
         )}

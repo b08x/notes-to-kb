@@ -27,7 +27,8 @@ export async function bringToLife(
     history: ChatMessage[], 
     currentPrompt: string, 
     attachments: Attachment[] = [],
-    templateType: string = 'auto'
+    templateType: string = 'auto',
+    onChunk?: (text: string) => void
 ): Promise<string> {
   const parts: any[] = [];
   
@@ -91,7 +92,7 @@ export async function bringToLife(
   });
 
   try {
-    const response: GenerateContentResponse = await ai.models.generateContent({
+    const responseStream = await ai.models.generateContentStream({
       model: GEMINI_MODEL,
       contents: {
         parts: parts
@@ -102,7 +103,18 @@ export async function bringToLife(
       },
     });
 
-    let text = response.text || "<!-- Failed to generate content -->";
+    let fullText = "";
+    for await (const chunk of responseStream) {
+        const textChunk = chunk.text;
+        if (textChunk) {
+            fullText += textChunk;
+            if (onChunk) {
+                onChunk(fullText);
+            }
+        }
+    }
+
+    let text = fullText || "<!-- Failed to generate content -->";
 
     // Cleanup if the model still included markdown fences despite instructions
     text = text.replace(/^```html\s*/, '').replace(/^```\s*/, '').replace(/```$/, '');
