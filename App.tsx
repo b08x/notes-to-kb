@@ -291,7 +291,7 @@ const App: React.FC = () => {
     }
   };
 
-  // Handle Updates from LivePreview Editor
+  // Handle Updates from LivePreview Editor OR LivePulse Tool
   const handleUpdateArtifact = (id: string, newHtml: string) => {
       updateActiveProject(p => {
         const updatedMessages = p.messages.map(msg => {
@@ -359,7 +359,7 @@ const App: React.FC = () => {
                 loadingMessage={generationStatus}
                 className="w-full h-full shadow-2xl"
                 imageMap={activeProject.imageMap}
-                onUpdateArtifact={handleUpdateArtifact}
+                onUpdateArtifact={(id, html) => handleUpdateArtifact(id, html)}
             />
         </div>
 
@@ -377,15 +377,21 @@ const App: React.FC = () => {
                     isLoading={isGenerating} 
                     loadingMessage={generationStatus}
                     imageMap={activeProject.imageMap}
-                    onUpdateArtifact={handleUpdateArtifact}
+                    onUpdateArtifact={(id, html) => handleUpdateArtifact(id, html)}
                 />
             </div>
         )}
 
-        {/* Live Pulse Overlay */}
+        {/* Live Pulse Assistant Overlay */}
         <LivePulse 
             isActive={isLiveActive} 
-            onClose={() => setIsLiveActive(false)} 
+            onClose={() => setIsLiveActive(false)}
+            currentHtml={activeProject.activeCreation?.html}
+            onUpdateHtml={(newHtml) => {
+                if (activeProject.activeCreation?.id) {
+                    handleUpdateArtifact(activeProject.activeCreation.id, newHtml);
+                }
+            }} 
         />
     </div>
   );

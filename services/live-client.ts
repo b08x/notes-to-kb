@@ -3,13 +3,26 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  */
-import { GoogleGenAI, LiveServerMessage, Modality } from "@google/genai";
+import { GoogleGenAI, LiveServerMessage, Modality, FunctionDeclaration, Type } from "@google/genai";
 
-const DATA_PKT_HEADER_SIZE = 0; // Header size if any, 0 for raw PCM
-
-// Audio Config
 const INPUT_SAMPLE_RATE = 16000;
 const OUTPUT_SAMPLE_RATE = 24000;
+
+// Tool Definition
+const editDocumentTool: FunctionDeclaration = {
+  name: "edit_document",
+  description: "Update the HTML content of the document being viewed. Use this when the user asks to change, refine, or style the document.",
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      html: {
+        type: Type.STRING,
+        description: "The full, valid HTML code for the updated document."
+      }
+    },
+    required: ["html"]
+  }
+};
 
 export class LiveClient {
   private client: GoogleGenAI;
@@ -22,9 +35,13 @@ export class LiveClient {
   private nextStartTime = 0;
   private sources = new Set<AudioBufferSourceNode>();
   private onVolumeUpdate?: (level: number) => void;
+  private onToolCall?: (html: string) => void;
+  private initialContext: string = "";
 
-  constructor(apiKey: string) {
+  constructor(apiKey: string, initialContext: string = "", onToolCall?: (html: string) => void) {
     this.client = new GoogleGenAI({ apiKey });
+    this.initialContext = initialContext;
+    this.onToolCall = onToolCall;
   }
 
   async connect(onClose: () => void) {
@@ -38,17 +55,31 @@ export class LiveClient {
     this.outputNode = this.outputAudioContext.createGain();
     this.outputNode.connect(this.outputAudioContext.destination);
 
+    // Prepare System Instruction with Context
+    const systemInstruction = `You are a helpful, expert technical assistant for the "Notes to KB" app. 
+    Your goal is to help the user understand how to create Knowledge Base articles, suggest improvements, or just chat about their documentation needs.
+    
+    You have access to a tool 'edit_document' which can update the document the user is seeing.
+    If the user asks to change styles, fix typos, or restructure the content, generate the FULL updated HTML and call 'edit_document'.
+    
+    CURRENT DOCUMENT CONTEXT:
+    \`\`\`html
+    ${this.initialContext.substring(0, 20000)} 
+    \`\`\`
+    (Context truncated if too long. Assume standard HTML structure.)
+    
+    Keep verbal responses concise and conversational.`;
+
     // 2. Setup Live Session
     this.sessionPromise = this.client.live.connect({
       model: 'gemini-2.5-flash-native-audio-preview-09-2025',
       config: {
         responseModalities: [Modality.AUDIO],
+        tools: [{ functionDeclarations: [editDocumentTool] }],
         speechConfig: {
           voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } },
         },
-        systemInstruction: `You are a helpful, expert technical assistant for the "Notes to KB" app. 
-        Your goal is to help the user understand how to create Knowledge Base articles, suggest improvements, or just chat about their documentation needs.
-        Keep responses concise and conversational.`,
+        systemInstruction: systemInstruction,
       },
       callbacks: {
         onopen: async () => {
@@ -119,6 +150,7 @@ export class LiveClient {
   }
 
   private async handleMessage(message: LiveServerMessage) {
+    // Handle Audio Output
     if (message.serverContent?.modelTurn?.parts?.[0]?.inlineData) {
       const base64Audio = message.serverContent.modelTurn.parts[0].inlineData.data;
       await this.playAudio(base64Audio);
@@ -127,6 +159,40 @@ export class LiveClient {
     if (message.serverContent?.interrupted) {
       this.stopAudioPlayback();
     }
+
+    // Handle Tool Calls
+    if (message.toolCall) {
+        const functionCalls = message.toolCall.functionCalls;
+        if (functionCalls && functionCalls.length > 0) {
+            const responses = [];
+            
+            for (const call of functionCalls) {
+                if (call.name === 'edit_document') {
+                    console.log("Executing Tool: edit_document");
+                    const newHtml = (call.args as any)['html'];
+                    
+                    if (newHtml && this.onToolCall) {
+                        this.onToolCall(newHtml);
+                    }
+
+                    responses.push({
+                        id: call.id,
+                        name: call.name,
+                        response: { result: "Document updated successfully on client." }
+                    });
+                }
+            }
+
+            // Send Response back to model
+            if (responses.length > 0) {
+                this.sessionPromise?.then(session => {
+                    session.sendToolResponse({
+                        functionResponses: responses
+                    });
+                });
+            }
+        }
+    }
   }
 
   private async playAudio(base64: string) {
@@ -134,10 +200,6 @@ export class LiveClient {
 
     const arrayBuffer = this.base64ToArrayBuffer(base64);
     const audioBuffer = await this.outputAudioContext.decodeAudioData(arrayBuffer).catch(async () => {
-        // Fallback for raw PCM if decodeAudioData fails (Browsers prefer headers)
-        // Since API returns Raw PCM, we usually need manual decoding or WAV header injection.
-        // However, the updated SDK examples suggest standard decode might work if headers are present, 
-        // OR we manually decode PCM. Let's manually decode PCM 16-bit 24kHz.
         return this.decodePCM16(arrayBuffer, 24000);
     });
 
