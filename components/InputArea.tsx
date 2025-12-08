@@ -4,12 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 import React, { useCallback, useState, useEffect, useRef } from 'react';
-import { ArrowUpTrayIcon, SparklesIcon, CpuChipIcon, MicrophoneIcon, PaperAirplaneIcon, DocumentDuplicateIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
+import { ArrowUpTrayIcon, SparklesIcon, CpuChipIcon, MicrophoneIcon, PaperAirplaneIcon, DocumentDuplicateIcon, ChevronDownIcon, BoltIcon } from '@heroicons/react/24/outline';
 
 interface InputAreaProps {
   onGenerate: (prompt: string, files?: File[], template?: string) => void;
   isGenerating: boolean;
   disabled?: boolean;
+  onStartLive?: () => void;
 }
 
 const CyclingText = () => {
@@ -43,7 +44,7 @@ const CyclingText = () => {
     );
 };
 
-export const InputArea: React.FC<InputAreaProps> = ({ onGenerate, isGenerating, disabled = false }) => {
+export const InputArea: React.FC<InputAreaProps> = ({ onGenerate, isGenerating, disabled = false, onStartLive }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [isListening, setIsListening] = useState(false);
@@ -242,11 +243,22 @@ export const InputArea: React.FC<InputAreaProps> = ({ onGenerate, isGenerating, 
          <button 
             onClick={toggleListening} 
             className={`p-3 rounded-lg hover:bg-zinc-800 transition-colors ${isListening ? 'text-red-500 animate-pulse bg-red-500/10' : 'text-zinc-400'}`}
-            title="Start voice dictation"
+            title="Dictate text"
             disabled={isGenerating}
          >
             <MicrophoneIcon className="w-5 h-5" />
          </button>
+
+         {onStartLive && (
+             <button
+                onClick={onStartLive}
+                className="p-3 rounded-lg hover:bg-purple-900/20 text-purple-400 transition-colors border border-transparent hover:border-purple-500/30"
+                title="Start Live Conversation"
+             >
+                 <BoltIcon className="w-5 h-5 animate-pulse" />
+             </button>
+         )}
+
          <input 
             type="text" 
             value={prompt}

@@ -10,6 +10,7 @@ import { Chat, Message } from './components/Chat';
 import { LivePreview } from './components/LivePreview';
 import { InputArea } from './components/InputArea';
 import { Sidebar, ProjectSummary } from './components/Sidebar';
+import { LivePulse } from './components/LivePulse';
 
 interface ProjectData extends ProjectSummary {
     messages: Message[];
@@ -31,6 +32,7 @@ const App: React.FC = () => {
   const [activeProjectId, setActiveProjectId] = useState<string>(projects[0].id);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationStatus, setGenerationStatus] = useState<string>("");
+  const [isLiveActive, setIsLiveActive] = useState(false);
 
   const activeProject = projects.find(p => p.id === activeProjectId) || projects[0];
 
@@ -313,7 +315,7 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="flex h-[100dvh] bg-[#09090b] text-zinc-50 overflow-hidden font-sans">
+    <div className="flex h-[100dvh] bg-[#09090b] text-zinc-50 overflow-hidden font-sans relative">
         {/* Sidebar for Sessions */}
         <Sidebar 
             projects={projects}
@@ -330,7 +332,8 @@ const App: React.FC = () => {
                 <div className="flex-1 flex items-center justify-center p-4">
                     <InputArea 
                         onGenerate={(prompt, files, template) => handleSendMessage(prompt, files, 'source', template)} 
-                        isGenerating={isGenerating} 
+                        isGenerating={isGenerating}
+                        onStartLive={() => setIsLiveActive(true)}
                     />
                 </div>
             ) : (
@@ -378,6 +381,12 @@ const App: React.FC = () => {
                 />
             </div>
         )}
+
+        {/* Live Pulse Overlay */}
+        <LivePulse 
+            isActive={isLiveActive} 
+            onClose={() => setIsLiveActive(false)} 
+        />
     </div>
   );
 };
