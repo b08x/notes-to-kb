@@ -1,6 +1,6 @@
 {
   "name": "Notes to KB",
-  "description": "Upload notes, screenshots, or documents to assist with the generation of structured ServiceNow Knowledge Base articles.",
+  "description": "Upload notes, screenshots, or documents to assist with the generation of structured Knowledge Base articles.",
   "requestFramePermissions": [
     "microphone"
   ]
