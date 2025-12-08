@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 import React, { useEffect, useState, useRef, useMemo } from 'react';
-import { ArrowDownTrayIcon, CodeBracketIcon, DocumentTextIcon, PencilIcon, CheckIcon, XMarkIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon } from '@heroicons/react/24/outline';
+import { ArrowDownTrayIcon, CodeBracketIcon, DocumentTextIcon, PencilIcon, CheckIcon, XMarkIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon, PaintBrushIcon } from '@heroicons/react/24/outline';
 import { Creation } from './CreationHistory';
 import { DocxGenerator } from '../lib/services/DocxGenerator';
 
@@ -60,9 +60,35 @@ const PdfRenderer = ({ dataUrl }: { dataUrl: string }) => {
   );
 };
 
+// Helper to convert RGB to Hex for color inputs
+const rgbToHex = (rgb: string) => {
+    if (!rgb || rgb === 'transparent' || rgb === 'rgba(0, 0, 0, 0)') return '#ffffff';
+    if (rgb.startsWith('#')) return rgb;
+    const sep = rgb.indexOf(",") > -1 ? "," : " ";
+    const rgbVal = rgb.substr(4).split(")")[0].split(sep);
+    let r = (+rgbVal[0]).toString(16),
+        g = (+rgbVal[1]).toString(16),
+        b = (+rgbVal[2]).toString(16);
+    if (r.length === 1) r = "0" + r;
+    if (g.length === 1) g = "0" + g;
+    if (b.length === 1) b = "0" + b;
+    return "#" + r + g + b;
+};
+
 export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, className = "", imageMap = {}, onUpdateArtifact }) => {
     const [isExporting, setIsExporting] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
+    const [showStyleEditor, setShowStyleEditor] = useState(false);
+    const [selectedEl, setSelectedEl] = useState<HTMLElement | null>(null);
+    const [styleValues, setStyleValues] = useState({
+        color: '#000000',
+        backgroundColor: '#ffffff',
+        fontSize: '',
+        padding: '',
+        margin: '',
+        borderRadius: ''
+    });
+
     const iframeRef = useRef<HTMLIFrameElement>(null);
 
     // Process HTML to inject image data and edit styles
@@ -80,7 +106,6 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, c
         });
 
         // Inject Base Styles + Edit Styles
-        // We include specific image styling here for aesthetic resizing
         const styleTag = `<style id="kb-edit-style">
             /* Default KB Styles for Preview */
             body { 
@@ -144,7 +169,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, c
         return html;
     }, [creation?.html, imageMap]);
 
-    // Handle Edit Mode Toggling
+    // Handle Edit Mode Toggling (Content)
     useEffect(() => {
         const iframe = iframeRef.current;
         if (!iframe) return;
@@ -154,17 +179,20 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, c
                  const doc = iframe.contentDocument;
                  if (!doc) return;
                  
-                 // Apply contentEditable to the body
+                 // If style editor is active, ensure content editable is OFF
+                 if (showStyleEditor) {
+                     doc.body.contentEditable = "false";
+                     doc.body.classList.remove('editing-mode');
+                     return;
+                 }
+
                  doc.body.contentEditable = isEditing ? "true" : "false";
-                 
-                 // Toggle class for styling
                  if (isEditing) {
                      doc.body.classList.add('editing-mode');
                  } else {
                      doc.body.classList.remove('editing-mode');
                  }
              } catch (e) {
-                 // May fail if cross-origin, but sandbox="allow-same-origin" prevents this
                  console.error("Cannot access iframe document for editing", e);
              }
         };
@@ -172,7 +200,123 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, c
         // Try immediately and on load
         toggleEdit();
         iframe.onload = toggleEdit;
-    }, [isEditing, processedHtml]);
+    }, [isEditing, processedHtml, showStyleEditor]);
+
+    // Handle Style Editor Mode Toggling
+    useEffect(() => {
+        const iframe = iframeRef.current;
+        if (!iframe) return;
+
+        const setupStyleEditor = () => {
+            const doc = iframe.contentDocument;
+            if (!doc) return;
+
+            // Cleanup function
+            const cleanup = () => {
+                const style = doc.getElementById('kb-style-editor-css');
+                if (style) style.remove();
+                doc.querySelectorAll('.kb-style-selected').forEach(el => el.classList.remove('kb-style-selected'));
+                doc.querySelectorAll('.kb-style-hover').forEach(el => el.classList.remove('kb-style-hover'));
+                
+                // Remove listeners if they were attached
+                // Note: We use named functions in the scope of setupStyleEditor, so we can't easily remove them 
+                // unless we keep references. Since we recreate them on each run, we need a way to clean up previous.
+                // Simplified: We rely on the effect return cleanup.
+            };
+
+            if (showStyleEditor) {
+                // Inject styles for selection/hover
+                const style = doc.createElement('style');
+                style.id = 'kb-style-editor-css';
+                style.textContent = `
+                    .kb-style-hover { outline: 2px dashed #60a5fa !important; cursor: pointer !important; }
+                    .kb-style-selected { outline: 2px solid #3b82f6 !important; box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.2); }
+                `;
+                doc.head.appendChild(style);
+
+                // Define handlers
+                const handleClick = (e: Event) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const target = e.target as HTMLElement;
+                    if (target === doc.body || target === doc.documentElement) {
+                        setSelectedEl(null);
+                        return;
+                    }
+
+                    // Manage classes
+                    doc.querySelectorAll('.kb-style-selected').forEach(el => el.classList.remove('kb-style-selected'));
+                    target.classList.add('kb-style-selected');
+                    setSelectedEl(target);
+                };
+
+                const handleOver = (e: Event) => {
+                    const target = e.target as HTMLElement;
+                    if (target !== doc.body && target !== doc.documentElement) {
+                        target.classList.add('kb-style-hover');
+                    }
+                };
+
+                const handleOut = (e: Event) => {
+                    (e.target as HTMLElement).classList.remove('kb-style-hover');
+                };
+
+                // Attach
+                doc.body.addEventListener('click', handleClick);
+                doc.body.addEventListener('mouseover', handleOver);
+                doc.body.addEventListener('mouseout', handleOut);
+
+                return () => {
+                    doc.body.removeEventListener('click', handleClick);
+                    doc.body.removeEventListener('mouseover', handleOver);
+                    doc.body.removeEventListener('mouseout', handleOut);
+                    cleanup();
+                };
+            } else {
+                cleanup();
+                setSelectedEl(null);
+            }
+        };
+
+        let cleanupFn: (() => void) | undefined;
+        // Run setup
+        if (iframe.contentDocument && iframe.contentDocument.readyState === 'complete') {
+             cleanupFn = setupStyleEditor();
+        } else {
+            iframe.onload = () => {
+                if (cleanupFn) cleanupFn();
+                cleanupFn = setupStyleEditor();
+            };
+        }
+
+        return () => {
+            if (cleanupFn) cleanupFn();
+        };
+
+    }, [showStyleEditor, processedHtml]);
+
+    // Update style values when selected element changes
+    useEffect(() => {
+        if (!selectedEl) return;
+        const win = iframeRef.current?.contentWindow;
+        if (!win) return;
+
+        const comp = win.getComputedStyle(selectedEl);
+        setStyleValues({
+            color: rgbToHex(comp.color),
+            backgroundColor: rgbToHex(comp.backgroundColor),
+            fontSize: comp.fontSize,
+            padding: comp.padding,
+            margin: comp.margin,
+            borderRadius: comp.borderRadius
+        });
+    }, [selectedEl]);
+
+    const handleStyleChange = (prop: string, value: string) => {
+        if (!selectedEl) return;
+        (selectedEl.style as any)[prop] = value;
+        setStyleValues(prev => ({ ...prev, [prop]: value }));
+    };
 
     const handleUndo = () => {
         iframeRef.current?.contentDocument?.execCommand('undo');
@@ -186,7 +330,28 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, c
         if (!iframeRef.current?.contentDocument) return;
         const doc = iframeRef.current.contentDocument;
         
-        // 1. Revert images: Swap data URL back to ID
+        // 1. CLEANUP DOM
+        // Remove style editor specific elements
+        const editorStyle = doc.getElementById('kb-style-editor-css');
+        if (editorStyle) editorStyle.remove();
+        
+        const previewStyle = doc.getElementById('kb-edit-style');
+        if (previewStyle) previewStyle.remove();
+
+        // Cleanup classes and attributes
+        const cleanNode = (node: Element) => {
+            node.removeAttribute('contenteditable');
+            node.classList.remove('editing-mode');
+            node.classList.remove('kb-style-selected');
+            node.classList.remove('kb-style-hover');
+            // If class attribute is empty, remove it
+            if (node.getAttribute('class') === '') node.removeAttribute('class');
+            
+            Array.from(node.children).forEach(child => cleanNode(child));
+        };
+        cleanNode(doc.body);
+
+        // 2. Revert images: Swap data URL back to ID
         const imgs = doc.querySelectorAll('img[data-kb-id]');
         imgs.forEach(img => {
             const id = img.getAttribute('data-kb-id');
@@ -196,24 +361,21 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, c
             }
         });
 
-        // 2. Get HTML and Cleanup
+        // 3. Get HTML
         let newHtml = doc.documentElement.outerHTML;
         
-        // Remove the injected style tag
-        newHtml = newHtml.replace(/<style id="kb-edit-style">.*?<\/style>/s, '');
-        // Remove contenteditable attributes
-        newHtml = newHtml.replace(/\s*contenteditable="true"/g, '');
-        newHtml = newHtml.replace(/\s*class="editing-mode"/g, '');
-
-        // 3. Update Parent
+        // 4. Update Parent
         if (creation && onUpdateArtifact) {
             onUpdateArtifact(creation.id, newHtml);
         }
         setIsEditing(false);
+        setShowStyleEditor(false);
     };
 
     const handleCancelEdit = () => {
         setIsEditing(false);
+        setShowStyleEditor(false);
+        setSelectedEl(null);
         // Force reset iframe content to original prop
         if (iframeRef.current) {
             iframeRef.current.srcdoc = processedHtml;
@@ -227,7 +389,6 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, c
 
         try {
             const generator = new DocxGenerator();
-            // Use the processed HTML which has actual image data
             const blob = await generator.generate(processedHtml);
             
             const url = URL.createObjectURL(blob);
@@ -275,7 +436,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, c
       <div className="h-14 flex items-center justify-between px-4 border-b border-zinc-800 bg-[#121214] shrink-0">
         <div className="flex items-center space-x-2">
             <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider">
-                {isLoading ? 'Compiling...' : (isEditing ? 'Editing...' : 'Preview')}
+                {isLoading ? 'Compiling...' : (isEditing ? 'Text Edit Mode' : (showStyleEditor ? 'Style Mode' : 'Preview'))}
             </span>
             {creation && (
                 <span className="text-xs text-zinc-600 bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800">
@@ -287,35 +448,49 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, c
         {/* Actions */}
         {creation && (
             <div className="flex items-center space-x-2">
-                {/* Edit Controls */}
-                {!isEditing ? (
-                    <button 
-                        onClick={() => setIsEditing(true)}
-                        disabled={isLoading}
-                        className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:bg-zinc-800 rounded-md transition-colors border border-transparent hover:border-zinc-700 disabled:opacity-50"
-                    >
-                        <PencilIcon className="w-3.5 h-3.5" />
-                        <span>Edit</span>
-                    </button>
+                {/* Mode Controls */}
+                {!isEditing && !showStyleEditor ? (
+                    <>
+                        <button 
+                            onClick={() => setIsEditing(true)}
+                            disabled={isLoading}
+                            className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:bg-zinc-800 rounded-md transition-colors border border-transparent hover:border-zinc-700 disabled:opacity-50"
+                            title="Edit Content Text"
+                        >
+                            <PencilIcon className="w-3.5 h-3.5" />
+                            <span>Edit Text</span>
+                        </button>
+                        <button 
+                            onClick={() => setShowStyleEditor(true)}
+                            disabled={isLoading}
+                            className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:bg-zinc-800 rounded-md transition-colors border border-transparent hover:border-zinc-700 disabled:opacity-50"
+                            title="Edit Styles"
+                        >
+                            <PaintBrushIcon className="w-3.5 h-3.5" />
+                            <span>Style</span>
+                        </button>
+                    </>
                 ) : (
                     <>
-                        {/* Undo / Redo */}
-                         <div className="flex items-center space-x-1 border-r border-zinc-800 pr-2 mr-1">
-                            <button
-                                onClick={handleUndo}
-                                className="p-1.5 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-md transition-colors"
-                                title="Undo"
-                            >
-                                <ArrowUturnLeftIcon className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                                onClick={handleRedo}
-                                className="p-1.5 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-md transition-colors"
-                                title="Redo"
-                            >
-                                <ArrowUturnRightIcon className="w-3.5 h-3.5" />
-                            </button>
-                        </div>
+                        {/* Undo / Redo - Only for Text Edit really, but useful generally */}
+                         {isEditing && (
+                             <div className="flex items-center space-x-1 border-r border-zinc-800 pr-2 mr-1">
+                                <button
+                                    onClick={handleUndo}
+                                    className="p-1.5 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-md transition-colors"
+                                    title="Undo"
+                                >
+                                    <ArrowUturnLeftIcon className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                    onClick={handleRedo}
+                                    className="p-1.5 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-md transition-colors"
+                                    title="Redo"
+                                >
+                                    <ArrowUturnRightIcon className="w-3.5 h-3.5" />
+                                </button>
+                            </div>
+                         )}
 
                          <button 
                             onClick={handleSaveEdit}
@@ -338,7 +513,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, c
 
                 <button 
                     onClick={handleExportDocx}
-                    disabled={isExporting || isEditing}
+                    disabled={isExporting || isEditing || showStyleEditor}
                     className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:bg-zinc-800 rounded-md transition-colors border border-transparent hover:border-zinc-700 disabled:opacity-50"
                     title="Export as ServiceNow Compatible Word Doc"
                 >
@@ -368,6 +543,99 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, c
                     <div className="w-8 h-8 border-2 border-blue-500/30 border-t-blue-500 rounded-full animate-spin"></div>
                     <span className="text-xs font-mono animate-pulse">GENERATING ARTIFACT...</span>
                 </div>
+            </div>
+        )}
+
+        {/* Style Editor Floating Panel */}
+        {showStyleEditor && (
+            <div className="absolute top-4 right-4 z-30 w-64 bg-zinc-900/90 backdrop-blur-md border border-zinc-700/50 rounded-lg shadow-2xl p-4 animate-in fade-in slide-in-from-right-4">
+                <div className="flex items-center justify-between mb-3 pb-2 border-b border-zinc-700">
+                    <h3 className="text-xs font-bold text-zinc-100 uppercase tracking-wide flex items-center gap-2">
+                        <PaintBrushIcon className="w-3 h-3 text-blue-400" /> Style Editor
+                    </h3>
+                    <button onClick={() => setShowStyleEditor(false)} className="text-zinc-500 hover:text-zinc-300">
+                        <XMarkIcon className="w-3.5 h-3.5" />
+                    </button>
+                </div>
+                
+                {selectedEl ? (
+                    <div className="space-y-3">
+                        <div className="grid grid-cols-2 gap-2">
+                             <div className="col-span-1">
+                                <label className="block text-[10px] text-zinc-400 mb-1">Color</label>
+                                <div className="flex items-center gap-2">
+                                    <input 
+                                        type="color" 
+                                        value={styleValues.color}
+                                        onChange={(e) => handleStyleChange('color', e.target.value)}
+                                        className="w-6 h-6 rounded cursor-pointer bg-transparent border-none p-0" 
+                                    />
+                                    <span className="text-[10px] font-mono text-zinc-500">{styleValues.color}</span>
+                                </div>
+                             </div>
+                             <div className="col-span-1">
+                                <label className="block text-[10px] text-zinc-400 mb-1">Background</label>
+                                <div className="flex items-center gap-2">
+                                    <input 
+                                        type="color" 
+                                        value={styleValues.backgroundColor}
+                                        onChange={(e) => handleStyleChange('backgroundColor', e.target.value)}
+                                        className="w-6 h-6 rounded cursor-pointer bg-transparent border-none p-0" 
+                                    />
+                                </div>
+                             </div>
+                        </div>
+
+                        <div>
+                             <label className="block text-[10px] text-zinc-400 mb-1">Font Size</label>
+                             <input 
+                                type="text" 
+                                value={styleValues.fontSize}
+                                onChange={(e) => handleStyleChange('fontSize', e.target.value)}
+                                className="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:border-blue-500"
+                                placeholder="16px"
+                             />
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-2">
+                             <div>
+                                 <label className="block text-[10px] text-zinc-400 mb-1">Padding</label>
+                                 <input 
+                                    type="text" 
+                                    value={styleValues.padding}
+                                    onChange={(e) => handleStyleChange('padding', e.target.value)}
+                                    className="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:border-blue-500"
+                                    placeholder="0px"
+                                 />
+                             </div>
+                             <div>
+                                 <label className="block text-[10px] text-zinc-400 mb-1">Margin</label>
+                                 <input 
+                                    type="text" 
+                                    value={styleValues.margin}
+                                    onChange={(e) => handleStyleChange('margin', e.target.value)}
+                                    className="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:border-blue-500"
+                                    placeholder="0px"
+                                 />
+                             </div>
+                        </div>
+                         
+                        <div>
+                             <label className="block text-[10px] text-zinc-400 mb-1">Border Radius</label>
+                             <input 
+                                type="text" 
+                                value={styleValues.borderRadius}
+                                onChange={(e) => handleStyleChange('borderRadius', e.target.value)}
+                                className="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:border-blue-500"
+                                placeholder="4px"
+                             />
+                        </div>
+                    </div>
+                ) : (
+                    <div className="py-8 text-center">
+                        <p className="text-xs text-zinc-500">Click an element in the preview to style it.</p>
+                    </div>
+                )}
             </div>
         )}
         
