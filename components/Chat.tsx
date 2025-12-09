@@ -41,11 +41,18 @@ export const Chat: React.FC<ChatProps> = ({
   const [uploadType, setUploadType] = useState<'source' | 'screenshot'>('source');
   
   const [isListening, setIsListening] = useState(false);
+  const [showImprovementMenu, setShowImprovementMenu] = useState(false);
+  
+  // Refinement Dialog State
+  const [showRefineDialog, setShowRefineDialog] = useState(false);
+  const [refinePrompt, setRefinePrompt] = useState('');
+  
   const recognitionRef = useRef<any>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const sourceInputRef = useRef<HTMLInputElement>(null);
   const screenshotInputRef = useRef<HTMLInputElement>(null);
+  const refineInputRef = useRef<HTMLTextAreaElement>(null);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -53,6 +60,13 @@ export const Chat: React.FC<ChatProps> = ({
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages]);
+
+  // Focus refine input when dialog opens
+  useEffect(() => {
+    if (showRefineDialog && refineInputRef.current) {
+      refineInputRef.current.focus();
+    }
+  }, [showRefineDialog]);
 
   // Cleanup speech recognition on unmount
   useEffect(() => {
@@ -117,6 +131,7 @@ export const Chat: React.FC<ChatProps> = ({
     setInput('');
     setSelectedFiles([]);
     setUploadType('source'); // Reset to default
+    setShowImprovementMenu(false);
   };
 
   const handleDrag = (e: React.DragEvent) => {
@@ -161,9 +176,66 @@ export const Chat: React.FC<ChatProps> = ({
     onSendMessage(prompt);
   };
 
+  const handleRefineSubmit = () => {
+    if (!refinePrompt.trim()) return;
+    onSendMessage(refinePrompt);
+    setRefinePrompt('');
+    setShowRefineDialog(false);
+  };
+
   return (
-    <div className="flex flex-col h-full bg-[#0E0E10] border-r border-zinc-800">
+    <div className="relative flex flex-col h-full bg-[#0E0E10] border-r border-zinc-800">
       
+      {/* Refine Dialog Overlay */}
+      {showRefineDialog && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="w-full max-w-md bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="px-4 py-3 border-b border-zinc-800 flex justify-between items-center bg-zinc-800/50">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <PencilSquareIcon className="w-4 h-4 text-blue-400" />
+                  Refine Content
+              </h3>
+              <button onClick={() => setShowRefineDialog(false)} className="text-zinc-500 hover:text-zinc-300">
+                  <XMarkIcon className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-4 space-y-4">
+              <p className="text-xs text-zinc-400">
+                  Describe how you want to change or improve the document.
+              </p>
+              <textarea
+                  ref={refineInputRef}
+                  value={refinePrompt}
+                  onChange={(e) => setRefinePrompt(e.target.value)}
+                  onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          handleRefineSubmit();
+                      }
+                  }}
+                  placeholder="e.g., Change the tone to be more friendly, add a section about API keys, fix the typo in step 2..."
+                  className="w-full h-32 bg-black/20 border border-zinc-700 rounded-lg p-3 text-sm text-zinc-200 focus:outline-none focus:border-blue-500 resize-none placeholder-zinc-600"
+              />
+              <div className="flex justify-end gap-2">
+                  <button 
+                      onClick={() => setShowRefineDialog(false)}
+                      className="px-3 py-2 text-xs font-medium text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
+                  >
+                      Cancel
+                  </button>
+                  <button 
+                      onClick={handleRefineSubmit}
+                      disabled={!refinePrompt.trim()}
+                      className="px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 rounded-lg shadow-lg shadow-blue-900/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                  >
+                      Refine
+                  </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Chat History */}
       <div 
         ref={scrollRef}
@@ -267,21 +339,51 @@ export const Chat: React.FC<ChatProps> = ({
         
         {/* Quick Actions for Active Artifact */}
         {activeArtifactId && !isGenerating && (
-          <div className="flex gap-2 mb-3 px-1 overflow-x-auto scrollbar-hide">
-             <button 
-                onClick={() => handleSuggestion("Suggest improvements for this article based on industry best practices.")}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-xs rounded-full border border-emerald-500/20 transition-colors whitespace-nowrap"
-             >
-                <SparklesIcon className="w-3.5 h-3.5" />
-                Suggest Improvements
-             </button>
-             <button 
-                onClick={() => handleSuggestion("Refine the content for clarity, conciseness, and professional tone.")}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 text-xs rounded-full border border-blue-500/20 transition-colors whitespace-nowrap"
-             >
-                <PencilSquareIcon className="w-3.5 h-3.5" />
-                Refine Content
-             </button>
+          <div className="flex gap-2 mb-3 px-1 overflow-x-auto scrollbar-hide items-center min-h-[32px]">
+             {!showImprovementMenu ? (
+                 <>
+                     <button 
+                        onClick={() => setShowImprovementMenu(true)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-xs rounded-full border border-emerald-500/20 transition-colors whitespace-nowrap"
+                     >
+                        <SparklesIcon className="w-3.5 h-3.5" />
+                        Suggest Improvements
+                     </button>
+                     <button 
+                        onClick={() => setShowRefineDialog(true)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 text-xs rounded-full border border-blue-500/20 transition-colors whitespace-nowrap"
+                     >
+                        <PencilSquareIcon className="w-3.5 h-3.5" />
+                        Refine Content
+                     </button>
+                 </>
+             ) : (
+                <div className="flex items-center gap-2 animate-in slide-in-from-left-2 duration-200 w-full">
+                    <button onClick={() => setShowImprovementMenu(false)} className="p-1 text-zinc-500 hover:text-white hover:bg-zinc-800 rounded-full transition-colors shrink-0">
+                        <XMarkIcon className="w-4 h-4" />
+                    </button>
+                    <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider hidden sm:inline shrink-0">Improve:</span>
+                    
+                    <button 
+                       onClick={() => { handleSuggestion("Review the article structure and strictly enforce standard KB formatting rules (Headers, Spacing, Image placement)."); setShowImprovementMenu(false); }}
+                       className="px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 text-xs rounded-full border border-emerald-500/20 whitespace-nowrap transition-colors"
+                    >
+                       Fix Format
+                    </button>
+                    <button 
+                       onClick={() => { handleSuggestion("Analyze the content for clarity and rewrite ambiguous sections to be concise, direct, and professional."); setShowImprovementMenu(false); }}
+                       className="px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 text-xs rounded-full border border-emerald-500/20 whitespace-nowrap transition-colors"
+                    >
+                       Enhance Clarity
+                    </button>
+                     <button 
+                       onClick={() => { handleSuggestion("Audit the article for potential missing steps, prerequisites, safety warnings, or logic gaps."); setShowImprovementMenu(false); }}
+                       className="px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 text-xs rounded-full border border-emerald-500/20 whitespace-nowrap transition-colors"
+                    >
+                       Find Gaps
+                    </button>
+                </div>
+             )}
           </div>
         )}
 
