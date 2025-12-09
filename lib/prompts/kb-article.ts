@@ -6,6 +6,14 @@
 
 // Story 3.1.1: Template-Based Prompts
 
+const RESPONSE_FORMAT = `
+---
+**CRITICAL OUTPUT RULES:**
+1.  **Output ONLY HTML**: Do not output markdown ("\`\`\`"), introductory text, or explanations. Start directly with \`<!DOCTYPE html>\`.
+2.  **Full Document**: You must regenerate the **ENTIRE** HTML document, including \`<html>\`, \`<body>\`, and all content. Do not return partial updates.
+3.  **Preserve Structure**: Maintain the semantic tags (\`<h1>\`, \`<h2>\`, \`<ul>\`) and specific classes (e.g., \`<p class="metadata">\`) defined in the template.
+`;
+
 // 1. Troubleshooting / Triage (Existing)
 export const KB_TROUBLESHOOTING_SYSTEM_INSTRUCTION = `You are an expert Technical Writer and AI Engineer operating a "Notes + Screenshots -> KB Article" pipeline.
 
@@ -89,7 +97,7 @@ The document follows a **"Triage-First" Linear Flow**. It is designed for Servic
 #### **D. Visual Layout Rules**
 -   **Image Anchoring**: Images must be placed clearly after the step they illustrate.
 -   **Spacing**: Ensure logical flow.
-`;
+` + RESPONSE_FORMAT;
 
 // 2. How-To / Procedural
 export const KB_HOW_TO_SYSTEM_INSTRUCTION = `You are an expert Technical Writer transforming inputs into a "How-To" KB Article.
@@ -114,7 +122,7 @@ Use the provided image IDs (e.g. \`<img src="img-uuid-1">\`) immediately after t
 7.  **Next Steps / Related (H2)** (Optional).
 
 Use a professional, instructional tone.
-`;
+` + RESPONSE_FORMAT;
 
 // 3. FAQ
 export const KB_FAQ_SYSTEM_INSTRUCTION = `You are an expert Technical Writer transforming inputs into a "Frequently Asked Questions" (FAQ) document.
@@ -130,11 +138,12 @@ Synthesize the input into a structured Q&A format.
 4.  **Common Questions (H2)**:
     -   **Question (H3)**: The question text.
     -   **Answer (P/UL)**: Concise answer. Use bullets for lists.
+    -   **Answer (P/UL)**: Concise answer. Use bullets for lists.
     -   Use images if an answer requires visual proof (using \`<img src="ID">\`).
 5.  **Troubleshooting Links (H2)**: (Optional)
 
 Style: Clear, direct, and accessible.
-`;
+` + RESPONSE_FORMAT;
 
 export const GENERIC_SYSTEM_INSTRUCTION = `You are an expert AI Engineer and Product Designer specializing in "bringing artifacts to life".
 Your goal is to take user inputs—which might be images, text instructions, or requests to edit existing code—and generate fully functional, single-page HTML/JS/CSS applications.

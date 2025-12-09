@@ -114,8 +114,29 @@ export async function bringToLife(
 
     let text = fullText || "<!-- Failed to generate content -->";
 
-    // Cleanup if the model still included markdown fences despite instructions
+    // CLEANUP LOGIC: Strip markdown fences and conversational preambles
+    
+    // 1. Remove Markdown Fences first (often wraps the code)
     text = text.replace(/^```html\s*/, '').replace(/^```\s*/, '').replace(/```$/, '');
+
+    // 2. Find the start of the HTML document
+    const doctypeIdx = text.indexOf('<!DOCTYPE');
+    const htmlIdx = text.indexOf('<html');
+    
+    // Determine the earliest valid start tag
+    let startIdx = -1;
+    if (doctypeIdx !== -1 && htmlIdx !== -1) {
+        startIdx = Math.min(doctypeIdx, htmlIdx);
+    } else if (doctypeIdx !== -1) {
+        startIdx = doctypeIdx;
+    } else if (htmlIdx !== -1) {
+        startIdx = htmlIdx;
+    }
+
+    // 3. Slice if we found a valid start (removes "Here is your code:" text)
+    if (startIdx > 0) {
+        text = text.substring(startIdx);
+    }
 
     return text;
   } catch (error) {

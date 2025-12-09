@@ -365,19 +365,19 @@ export const Chat: React.FC<ChatProps> = ({
                     <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider hidden sm:inline shrink-0">Improve:</span>
                     
                     <button 
-                       onClick={() => { handleSuggestion("Review the article structure and strictly enforce standard KB formatting rules (Headers, Spacing, Image placement)."); setShowImprovementMenu(false); }}
+                       onClick={() => { handleSuggestion("Review the article structure and strictly enforce standard KB formatting rules (Headers, Spacing, Image placement). Regenerate the FULL HTML."); setShowImprovementMenu(false); }}
                        className="px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 text-xs rounded-full border border-emerald-500/20 whitespace-nowrap transition-colors"
                     >
                        Fix Format
                     </button>
                     <button 
-                       onClick={() => { handleSuggestion("Analyze the content for clarity and rewrite ambiguous sections to be concise, direct, and professional."); setShowImprovementMenu(false); }}
+                       onClick={() => { handleSuggestion("Analyze the content for clarity and rewrite ambiguous sections to be concise, direct, and professional. Regenerate the FULL HTML."); setShowImprovementMenu(false); }}
                        className="px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 text-xs rounded-full border border-emerald-500/20 whitespace-nowrap transition-colors"
                     >
                        Enhance Clarity
                     </button>
                      <button 
-                       onClick={() => { handleSuggestion("Audit the article for potential missing steps, prerequisites, safety warnings, or logic gaps."); setShowImprovementMenu(false); }}
+                       onClick={() => { handleSuggestion("Audit the article for potential missing steps, prerequisites, safety warnings, or logic gaps. Regenerate the FULL HTML."); setShowImprovementMenu(false); }}
                        className="px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 text-xs rounded-full border border-emerald-500/20 whitespace-nowrap transition-colors"
                     >
                        Find Gaps
