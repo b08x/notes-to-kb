@@ -26,6 +26,104 @@ declare global {
   }
 }
 
+// --- Audio Feedback Utilities ---
+const createAudioContext = () => {
+    return new (window.AudioContext || (window as any).webkitAudioContext)();
+};
+
+const playGeneratingSound = () => {
+    try {
+        const ctx = createAudioContext();
+        
+        // Sci-fi drone sound
+        const osc1 = ctx.createOscillator();
+        osc1.type = 'sine';
+        osc1.frequency.value = 120;
+        
+        const osc2 = ctx.createOscillator();
+        osc2.type = 'triangle';
+        osc2.frequency.value = 124; // Slight dissonance for texture
+
+        const gain1 = ctx.createGain();
+        gain1.gain.value = 0.02;
+        
+        const gain2 = ctx.createGain();
+        gain2.gain.value = 0.02;
+        
+        // LFO for pulsing effect
+        const lfo = ctx.createOscillator();
+        lfo.type = 'sine';
+        lfo.frequency.value = 0.5; // Slow pulse
+        
+        const lfoGain = ctx.createGain();
+        lfoGain.gain.value = 0.01; 
+        
+        lfo.connect(lfoGain);
+        lfoGain.connect(gain1.gain); // Modulate gain
+        
+        osc1.connect(gain1);
+        osc2.connect(gain2);
+        
+        gain1.connect(ctx.destination);
+        gain2.connect(ctx.destination);
+        
+        osc1.start();
+        osc2.start();
+        lfo.start();
+        
+        // Return stop function
+        return () => {
+            const now = ctx.currentTime;
+            // Fade out
+            gain1.gain.setTargetAtTime(0, now, 0.1);
+            gain2.gain.setTargetAtTime(0, now, 0.1);
+            setTimeout(() => {
+                osc1.stop();
+                osc2.stop();
+                lfo.stop();
+                ctx.close();
+            }, 200);
+        };
+    } catch (e) {
+        // Audio might be blocked or not supported
+        return () => {};
+    }
+};
+
+const playCompletionSound = () => {
+    try {
+        const ctx = createAudioContext();
+        const now = ctx.currentTime;
+        
+        // Pleasant rising chord (C Major ish)
+        const freqs = [523.25, 659.25, 783.99, 1046.50]; 
+        
+        freqs.forEach((f, i) => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            
+            osc.type = 'sine';
+            osc.frequency.value = f;
+            
+            // Envelope
+            gain.gain.setValueAtTime(0, now);
+            gain.gain.linearRampToValueAtTime(0.05, now + 0.05 + (i * 0.05));
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 1.0 + (i * 0.1));
+            
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            
+            osc.start(now + (i * 0.05));
+            osc.stop(now + 2);
+        });
+        
+        setTimeout(() => ctx.close(), 2500);
+    } catch (e) {
+        // Ignore errors
+    }
+};
+
+
 const PdfRenderer = ({ dataUrl }: { dataUrl: string }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [loading, setLoading] = useState(true);
@@ -94,8 +192,40 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
         maxWidth: '',
         boxShadow: ''
     });
+    
+    // Audio Feedback State Refs
+    const stopGenerationSoundRef = useRef<(() => void) | null>(null);
+    const prevIsLoadingRef = useRef(isLoading);
 
     const iframeRef = useRef<HTMLIFrameElement>(null);
+
+    // Audio Feedback Effect
+    useEffect(() => {
+        // Detect Start of Loading
+        if (isLoading && !prevIsLoadingRef.current) {
+            stopGenerationSoundRef.current = playGeneratingSound();
+        } 
+        // Detect End of Loading
+        else if (!isLoading && prevIsLoadingRef.current) {
+            if (stopGenerationSoundRef.current) {
+                stopGenerationSoundRef.current();
+                stopGenerationSoundRef.current = null;
+            }
+            // Only play success if we actually were generating (avoids noise on mount)
+            playCompletionSound();
+        }
+        
+        prevIsLoadingRef.current = isLoading;
+    }, [isLoading]);
+
+    // Cleanup audio on unmount
+    useEffect(() => {
+        return () => {
+            if (stopGenerationSoundRef.current) {
+                stopGenerationSoundRef.current();
+            }
+        };
+    }, []);
 
     // Process HTML to inject image data and edit styles
     const processedHtml = useMemo(() => {

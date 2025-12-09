@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 import React, { useCallback, useState, useEffect, useRef } from 'react';
-import { ArrowUpTrayIcon, SparklesIcon, CpuChipIcon, MicrophoneIcon, PaperAirplaneIcon, DocumentDuplicateIcon, ChevronDownIcon, BoltIcon } from '@heroicons/react/24/outline';
+import { ArrowUpTrayIcon, SparklesIcon, CpuChipIcon, MicrophoneIcon, PaperAirplaneIcon, DocumentDuplicateIcon, ChevronDownIcon, BoltIcon, CloudArrowUpIcon } from '@heroicons/react/24/outline';
 
 interface InputAreaProps {
   onGenerate: (prompt: string, files?: File[], template?: string) => void;
@@ -12,6 +12,60 @@ interface InputAreaProps {
   disabled?: boolean;
   onStartLive?: () => void;
 }
+
+// --- Audio Feedback Utilities ---
+const playDragHoverSound = () => {
+    try {
+        const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+        if (!AudioContext) return;
+        const ctx = new AudioContext();
+        
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        
+        // Subtle rising "blip"
+        osc.frequency.setValueAtTime(300, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(500, ctx.currentTime + 0.15);
+        
+        gain.gain.setValueAtTime(0, ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.05, ctx.currentTime + 0.05);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.2);
+        
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        
+        osc.start();
+        osc.stop(ctx.currentTime + 0.25);
+    } catch (e) {
+        // Ignore audio errors
+    }
+};
+
+const playDropSound = () => {
+    try {
+        const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+        if (!AudioContext) return;
+        const ctx = new AudioContext();
+        
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        
+        // Satisfying "thud/click"
+        osc.frequency.setValueAtTime(200, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(50, ctx.currentTime + 0.1);
+        
+        gain.gain.setValueAtTime(0.1, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
+        
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        
+        osc.start();
+        osc.stop(ctx.currentTime + 0.2);
+    } catch (e) {
+        // Ignore audio errors
+    }
+};
 
 const CyclingText = () => {
     const words = [
@@ -56,6 +110,7 @@ export const InputArea: React.FC<InputAreaProps> = ({ onGenerate, isGenerating, 
     const validFiles = fileArray.filter(file => file.type.startsWith('image/') || file.type === 'application/pdf');
     
     if (validFiles.length > 0) {
+      playDropSound(); // Audio feedback on success
       onGenerate(prompt, validFiles, selectedTemplate);
     } else {
       alert("Please upload valid images or PDFs.");
@@ -70,6 +125,7 @@ export const InputArea: React.FC<InputAreaProps> = ({ onGenerate, isGenerating, 
 
   const handleDrop = useCallback((e: React.DragEvent<HTMLLabelElement>) => {
     e.preventDefault();
+    e.stopPropagation();
     setIsDragging(false);
     if (disabled || isGenerating) return;
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
@@ -79,13 +135,20 @@ export const InputArea: React.FC<InputAreaProps> = ({ onGenerate, isGenerating, 
 
   const handleDragOver = useCallback((e: React.DragEvent<HTMLLabelElement>) => {
     e.preventDefault();
+    e.stopPropagation();
     if (!disabled && !isGenerating) {
-        setIsDragging(true);
+        if (!isDragging) {
+            setIsDragging(true);
+            playDragHoverSound(); // Play sound only on transition to dragging
+        }
     }
-  }, [disabled, isGenerating]);
+  }, [disabled, isGenerating, isDragging]);
 
   const handleDragLeave = useCallback((e: React.DragEvent<HTMLLabelElement>) => {
     e.preventDefault();
+    e.stopPropagation();
+    // Only set dragging to false if we are actually leaving the container, not entering a child
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
     setIsDragging(false);
   }, []);
 
@@ -147,7 +210,7 @@ export const InputArea: React.FC<InputAreaProps> = ({ onGenerate, isGenerating, 
   return (
     <div className="w-full max-w-4xl mx-auto perspective-1000 flex flex-col gap-6">
       <div 
-        className={`relative group transition-all duration-300 ${isDragging ? 'scale-[1.01]' : ''}`}
+        className={`relative group transition-all duration-300 ${isDragging ? 'scale-[1.02]' : ''}`}
       >
         <label
           className={`
@@ -159,7 +222,7 @@ export const InputArea: React.FC<InputAreaProps> = ({ onGenerate, isGenerating, 
             cursor-pointer overflow-hidden
             transition-all duration-300
             ${isDragging 
-              ? 'border-blue-500 bg-zinc-900/50 shadow-[inset_0_0_20px_rgba(59,130,246,0.1)]' 
+              ? 'border-blue-400 bg-blue-900/10 shadow-[0_0_40px_rgba(59,130,246,0.15)] ring-2 ring-blue-500/20' 
               : 'border-zinc-700 hover:border-zinc-500 hover:bg-zinc-900/40'
             }
             ${isGenerating ? 'pointer-events-none' : ''}
@@ -169,17 +232,24 @@ export const InputArea: React.FC<InputAreaProps> = ({ onGenerate, isGenerating, 
           onDragLeave={handleDragLeave}
         >
             {/* Technical Grid Background */}
-            <div className="absolute inset-0 opacity-[0.03] pointer-events-none" 
+            <div className={`absolute inset-0 transition-opacity duration-300 pointer-events-none ${isDragging ? 'opacity-20' : 'opacity-[0.03]'}`} 
                  style={{backgroundImage: 'linear-gradient(#ffffff 1px, transparent 1px), linear-gradient(90deg, #ffffff 1px, transparent 1px)', backgroundSize: '32px 32px'}}>
             </div>
             
+            {/* Visual Drop Overlay */}
+            <div className={`absolute inset-0 bg-zinc-900/80 backdrop-blur-sm flex flex-col items-center justify-center z-20 transition-all duration-300 ${isDragging ? 'opacity-100 scale-100' : 'opacity-0 scale-95 pointer-events-none'}`}>
+                 <CloudArrowUpIcon className="w-16 h-16 text-blue-400 mb-4 animate-bounce" />
+                 <h3 className="text-2xl font-bold text-white tracking-tight">Release to Upload</h3>
+                 <p className="text-blue-300/80 mt-2 text-sm">Magic awaits...</p>
+            </div>
+            
             {/* Corner Brackets for technical feel */}
-            <div className={`absolute top-4 left-4 w-4 h-4 border-l-2 border-t-2 transition-colors duration-300 ${isDragging ? 'border-blue-500' : 'border-zinc-600'}`}></div>
-            <div className={`absolute top-4 right-4 w-4 h-4 border-r-2 border-t-2 transition-colors duration-300 ${isDragging ? 'border-blue-500' : 'border-zinc-600'}`}></div>
-            <div className={`absolute bottom-4 left-4 w-4 h-4 border-l-2 border-b-2 transition-colors duration-300 ${isDragging ? 'border-blue-500' : 'border-zinc-600'}`}></div>
-            <div className={`absolute bottom-4 right-4 w-4 h-4 border-r-2 border-b-2 transition-colors duration-300 ${isDragging ? 'border-blue-500' : 'border-zinc-600'}`}></div>
+            <div className={`absolute top-4 left-4 w-4 h-4 border-l-2 border-t-2 transition-all duration-300 ${isDragging ? 'border-blue-500 w-8 h-8' : 'border-zinc-600'}`}></div>
+            <div className={`absolute top-4 right-4 w-4 h-4 border-r-2 border-t-2 transition-all duration-300 ${isDragging ? 'border-blue-500 w-8 h-8' : 'border-zinc-600'}`}></div>
+            <div className={`absolute bottom-4 left-4 w-4 h-4 border-l-2 border-b-2 transition-all duration-300 ${isDragging ? 'border-blue-500 w-8 h-8' : 'border-zinc-600'}`}></div>
+            <div className={`absolute bottom-4 right-4 w-4 h-4 border-r-2 border-b-2 transition-all duration-300 ${isDragging ? 'border-blue-500 w-8 h-8' : 'border-zinc-600'}`}></div>
 
-            <div className="relative z-10 flex flex-col items-center text-center space-y-6 md:space-y-8 p-6 md:p-8 w-full">
+            <div className="relative z-10 flex flex-col items-center text-center space-y-6 md:space-y-8 p-6 md:p-8 w-full transition-opacity duration-300">
                 <div className={`relative w-16 h-16 md:w-20 md:h-20 rounded-2xl flex items-center justify-center transition-transform duration-500 ${isDragging ? 'scale-110' : 'group-hover:-translate-y-1'}`}>
                     <div className={`absolute inset-0 rounded-2xl bg-zinc-800 border border-zinc-700 shadow-xl flex items-center justify-center ${isGenerating ? 'animate-pulse' : ''}`}>
                         {isGenerating ? (
