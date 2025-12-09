@@ -50,25 +50,21 @@ export const LivePulse: React.FC<LivePulseProps> = ({ onClose, isActive, current
                         },
                         onTranscription: (text, source) => {
                             setTranscription(prev => {
-                                // If a new user utterance starts, implies a new turn, so maybe clear previous context?
-                                // For now, we just accumulate current turn.
-                                // If source is user and model has text, it means user interrupted or model finished -> clear model text for clarity?
-                                // Let's keep it simple: just append.
-                                // Actually, clearing 'other' source on new input helps readability.
-                                if (source === 'user' && prev.model.length > 0 && text.length < 5) {
-                                     // Heuristic: New user speech start -> Clear model buffer
-                                     return { user: prev.user + text, model: '' };
+                                // Logic: Clear the other party's text when a new turn starts to focus the display
+                                if (source === 'user') {
+                                    // If user is speaking, and we have model text, assume new turn -> clear model text
+                                    // Only clear if user text was empty (start of phrase) or if model text is present
+                                    if (prev.model) {
+                                        return { user: text, model: '' };
+                                    }
+                                    return { user: prev.user + text, model: '' };
+                                } else {
+                                    // If model is speaking, clear user text
+                                    if (prev.user) {
+                                        return { user: '', model: text };
+                                    }
+                                    return { user: '', model: prev.model + text };
                                 }
-                                if (source === 'model' && prev.user.length > 0 && text.length < 5) {
-                                     // Heuristic: New model speech start -> keep user text visible until it gets too long?
-                                     // Actually usually we want to see Q & A. 
-                                     return { ...prev, model: prev.model + text };
-                                }
-
-                                return {
-                                    ...prev,
-                                    [source]: prev[source] + text
-                                };
                             });
                         }
                     }
@@ -77,6 +73,7 @@ export const LivePulse: React.FC<LivePulseProps> = ({ onClose, isActive, current
                 clientRef.current = client;
 
                 await client.connect(() => {
+                    console.log("Live Client disconnected");
                     onClose();
                 }, liveConfig);
                 
@@ -84,7 +81,7 @@ export const LivePulse: React.FC<LivePulseProps> = ({ onClose, isActive, current
             } catch (e) {
                 console.error("Failed to start live session", e);
                 setStatus('error');
-                setTimeout(onClose, 2000);
+                // Do not auto-close immediately so user can see error state
             }
         };
         initSession();
@@ -95,7 +92,7 @@ export const LivePulse: React.FC<LivePulseProps> = ({ onClose, isActive, current
         clientRef.current?.stop();
         clientRef.current = null;
     };
-  }, [isActive, onClose, liveConfig]); // Re-connect if config changes (though practically modal closes first)
+  }, [isActive, onClose, liveConfig]); 
 
   if (!isActive) return null;
 
@@ -109,16 +106,16 @@ export const LivePulse: React.FC<LivePulseProps> = ({ onClose, isActive, current
             </div>
 
             {/* Header / Status */}
-            <div className="absolute top-6 left-6 flex items-center gap-3">
-                 <div className={`w-2 h-2 rounded-full ${status === 'active' ? 'bg-green-500 animate-pulse' : 'bg-yellow-500'}`}></div>
+            <div className="absolute top-6 left-6 flex items-center gap-3 z-20">
+                 <div className={`w-2 h-2 rounded-full ${status === 'active' ? 'bg-green-500 animate-pulse' : (status === 'error' ? 'bg-red-500' : 'bg-yellow-500')}`}></div>
                  <span className="text-zinc-400 text-xs font-mono uppercase tracking-widest">
-                     {status === 'active' ? 'LIVE SESSION ACTIVE' : 'CONNECTING...'}
+                     {status === 'active' ? 'LIVE SESSION ACTIVE' : (status === 'error' ? 'CONNECTION ERROR' : 'CONNECTING...')}
                  </span>
             </div>
 
             <button 
                 onClick={onClose}
-                className="absolute top-6 right-6 p-2 text-zinc-500 hover:text-white hover:bg-zinc-800 rounded-full transition-colors"
+                className="absolute top-6 right-6 p-2 text-zinc-500 hover:text-white hover:bg-zinc-800 rounded-full transition-colors z-20"
             >
                 <XMarkIcon className="w-6 h-6" />
             </button>
@@ -156,7 +153,7 @@ export const LivePulse: React.FC<LivePulseProps> = ({ onClose, isActive, current
                 </div>
 
                 {/* Transcription Display */}
-                <div className="w-full min-h-[100px] flex flex-col items-center justify-center space-y-4 text-center">
+                <div className="w-full min-h-[120px] flex flex-col items-center justify-center space-y-4 text-center">
                     {transcription.user && (
                          <p className="text-zinc-400 text-lg md:text-xl font-medium italic animate-in fade-in slide-in-from-bottom-2">
                              "{transcription.user}"
@@ -167,7 +164,9 @@ export const LivePulse: React.FC<LivePulseProps> = ({ onClose, isActive, current
                              {transcription.model}
                          </p>
                     ) : !transcription.user && (
-                        <p className="text-zinc-600 text-sm">Listening...</p>
+                        <p className="text-zinc-600 text-sm">
+                            {status === 'connecting' ? 'Establishing connection...' : 'Listening...'}
+                        </p>
                     )}
                 </div>
             </div>
@@ -200,7 +199,7 @@ export const LivePulse: React.FC<LivePulseProps> = ({ onClose, isActive, current
             <div className="relative w-12 h-12 flex-shrink-0 flex items-center justify-center">
                 <div className={`
                     absolute w-8 h-8 rounded-full transition-all duration-100 ease-out
-                    ${status === 'active' ? 'bg-gradient-to-tr from-blue-500 to-purple-500' : 'bg-zinc-700'}
+                    ${status === 'active' ? 'bg-gradient-to-tr from-blue-500 to-purple-500' : (status === 'error' ? 'bg-red-500' : 'bg-zinc-700')}
                 `} 
                 style={{ transform: `scale(${1 + volume * 1.5})` }}
                 ></div>
@@ -231,7 +230,7 @@ export const LivePulse: React.FC<LivePulseProps> = ({ onClose, isActive, current
                         </p>
                     ) : (
                         <p className="text-[10px] text-zinc-500 truncate">
-                            {status === 'connecting' ? 'Connecting...' : 'Listening...'}
+                            {status === 'connecting' ? 'Connecting...' : (status === 'error' ? 'Connection Error' : 'Listening...')}
                         </p>
                     )}
                 </div>
@@ -245,13 +244,6 @@ export const LivePulse: React.FC<LivePulseProps> = ({ onClose, isActive, current
                 <XMarkIcon className="w-4 h-4" />
             </button>
         </div>
-        
-        {/* Connection Error Toast */}
-        {status === 'error' && (
-            <div className="mt-2 bg-red-900/80 text-red-200 text-xs px-3 py-1.5 rounded-lg backdrop-blur-sm border border-red-500/30">
-                Connection Failed
-            </div>
-        )}
     </div>
   );
 };

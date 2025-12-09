@@ -185,6 +185,7 @@ export class LiveClient {
     }
 
     // Handle Transcription
+    // Safely check for transcription text
     const outText = message.serverContent?.outputTranscription?.text;
     if (outText) {
         this.callbacks.onTranscription?.(outText, 'model');
