@@ -11,6 +11,7 @@ import { LivePreview } from './components/LivePreview';
 import { InputArea } from './components/InputArea';
 import { Sidebar, ProjectSummary } from './components/Sidebar';
 import { LivePulse } from './components/LivePulse';
+import { SettingsModal, AppSettings } from './components/SettingsModal';
 
 interface ProjectData extends ProjectSummary {
     messages: Message[];
@@ -33,6 +34,15 @@ const App: React.FC = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationStatus, setGenerationStatus] = useState<string>("");
   const [isLiveActive, setIsLiveActive] = useState(false);
+  
+  // Settings State
+  const [showSettings, setShowSettings] = useState(false);
+  const [appSettings, setAppSettings] = useState<AppSettings>({
+      enableLiveApi: true,
+      liveModel: 'gemini-2.5-flash-native-audio-preview-09-2025',
+      liveVoice: 'Kore',
+      generationModel: 'gemini-3-pro-preview'
+  });
 
   const activeProject = projects.find(p => p.id === activeProjectId) || projects[0];
 
@@ -200,29 +210,36 @@ const App: React.FC = () => {
           modifiedText = `${text}\n\n[System: Remember to use existing image IDs (e.g. img-...) if you need to insert an image.]`;
       }
 
-      const html = await bringToLife(historyForGemini, modifiedText, geminiAttachments, templateType, (partialText) => {
-        // Live Assistant Status Logic based on streaming content
-        const lower = partialText.toLowerCase();
-        
-        // Basic heuristics to make the assistant feel "alive"
-        if (lower.length < 50) {
-            setGenerationStatus("Analyzing your inputs...");
-        } else if (lower.includes('<style')) {
-            setGenerationStatus("Designing visual theme...");
-        } else if (lower.includes('<script')) {
-            setGenerationStatus("Coding interactivity...");
-        } else if (lower.includes('<img')) {
-            setGenerationStatus("Embedding assets...");
-        } else if (lower.includes('h2') || lower.includes('h3')) {
-            setGenerationStatus("Structuring content...");
-        } else if (lower.includes('<ul>') || lower.includes('<ol>')) {
-            setGenerationStatus("Drafting procedures...");
-        } else if (lower.length > 500) {
-            setGenerationStatus("Refining details...");
-        } else {
-            setGenerationStatus("Generating content...");
-        }
-      });
+      const html = await bringToLife(
+          historyForGemini, 
+          modifiedText, 
+          geminiAttachments, 
+          templateType, 
+          (partialText) => {
+            // Live Assistant Status Logic based on streaming content
+            const lower = partialText.toLowerCase();
+            
+            // Basic heuristics to make the assistant feel "alive"
+            if (lower.length < 50) {
+                setGenerationStatus("Analyzing your inputs...");
+            } else if (lower.includes('<style')) {
+                setGenerationStatus("Designing visual theme...");
+            } else if (lower.includes('<script')) {
+                setGenerationStatus("Coding interactivity...");
+            } else if (lower.includes('<img')) {
+                setGenerationStatus("Embedding assets...");
+            } else if (lower.includes('h2') || lower.includes('h3')) {
+                setGenerationStatus("Structuring content...");
+            } else if (lower.includes('<ul>') || lower.includes('<ol>')) {
+                setGenerationStatus("Drafting procedures...");
+            } else if (lower.length > 500) {
+                setGenerationStatus("Refining details...");
+            } else {
+                setGenerationStatus("Generating content...");
+            }
+          },
+          appSettings.generationModel
+      );
       
       const creationId = crypto.randomUUID();
       
@@ -316,6 +333,14 @@ const App: React.FC = () => {
 
   return (
     <div className="flex h-[100dvh] bg-[#09090b] text-zinc-50 overflow-hidden font-sans relative">
+        {/* Settings Modal */}
+        <SettingsModal 
+            isOpen={showSettings} 
+            onClose={() => setShowSettings(false)}
+            settings={appSettings}
+            onUpdateSettings={setAppSettings}
+        />
+
         {/* Sidebar for Sessions */}
         <Sidebar 
             projects={projects}
@@ -323,6 +348,7 @@ const App: React.FC = () => {
             onSelectProject={setActiveProjectId}
             onNewProject={handleNewProject}
             onDeleteProject={handleDeleteProject}
+            onOpenSettings={() => setShowSettings(true)}
         />
 
         {/* Left Panel: Chat & Inputs (40% width on desktop) */}
@@ -333,7 +359,7 @@ const App: React.FC = () => {
                     <InputArea 
                         onGenerate={(prompt, files, template) => handleSendMessage(prompt, files, 'source', template)} 
                         isGenerating={isGenerating}
-                        onStartLive={() => setIsLiveActive(true)}
+                        onStartLive={appSettings.enableLiveApi ? () => setIsLiveActive(true) : undefined}
                     />
                 </div>
             ) : (
@@ -366,7 +392,7 @@ const App: React.FC = () => {
                             imageMap={activeProject.imageMap}
                             onUpdateArtifact={(id, html) => handleUpdateArtifact(id, html)}
                             isLive={isLiveActive}
-                            onToggleLive={() => setIsLiveActive(!isLiveActive)}
+                            onToggleLive={appSettings.enableLiveApi ? () => setIsLiveActive(!isLiveActive) : undefined}
                         />
                     </div>
                     <div className="h-1/2 w-full relative transition-all duration-500 animate-in fade-in slide-in-from-bottom-10">
@@ -380,6 +406,7 @@ const App: React.FC = () => {
                                 }
                             }}
                             mode="panel" 
+                            liveConfig={{ model: appSettings.liveModel, voice: appSettings.liveVoice }}
                         />
                     </div>
                 </>
@@ -394,7 +421,7 @@ const App: React.FC = () => {
                         imageMap={activeProject.imageMap}
                         onUpdateArtifact={(id, html) => handleUpdateArtifact(id, html)}
                         isLive={isLiveActive}
-                        onToggleLive={() => setIsLiveActive(!isLiveActive)}
+                        onToggleLive={appSettings.enableLiveApi ? () => setIsLiveActive(!isLiveActive) : undefined}
                     />
                 </div>
             )}
@@ -416,7 +443,7 @@ const App: React.FC = () => {
                     imageMap={activeProject.imageMap}
                     onUpdateArtifact={(id, html) => handleUpdateArtifact(id, html)}
                     isLive={isLiveActive}
-                    onToggleLive={() => setIsLiveActive(!isLiveActive)}
+                    onToggleLive={appSettings.enableLiveApi ? () => setIsLiveActive(!isLiveActive) : undefined}
                 />
             </div>
         )}
@@ -433,6 +460,7 @@ const App: React.FC = () => {
                         handleUpdateArtifact(activeProject.activeCreation.id, newHtml);
                     }
                 }} 
+                liveConfig={{ model: appSettings.liveModel, voice: appSettings.liveVoice }}
             />
         </div>
     </div>

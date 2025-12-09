@@ -13,9 +13,10 @@ interface LivePulseProps {
   currentHtml?: string;
   onUpdateHtml?: (html: string) => void;
   mode?: 'overlay' | 'panel';
+  liveConfig: { model: string; voice: string };
 }
 
-export const LivePulse: React.FC<LivePulseProps> = ({ onClose, isActive, currentHtml, onUpdateHtml, mode = 'overlay' }) => {
+export const LivePulse: React.FC<LivePulseProps> = ({ onClose, isActive, currentHtml, onUpdateHtml, mode = 'overlay', liveConfig }) => {
   const [volume, setVolume] = useState(0);
   const [status, setStatus] = useState<'connecting' | 'active' | 'error'>('connecting');
   const clientRef = useRef<LiveClient | null>(null);
@@ -53,7 +54,8 @@ export const LivePulse: React.FC<LivePulseProps> = ({ onClose, isActive, current
 
                 await client.connect(() => {
                     onClose();
-                });
+                }, liveConfig);
+                
                 setStatus('active');
             } catch (e) {
                 console.error("Failed to start live session", e);
@@ -69,7 +71,7 @@ export const LivePulse: React.FC<LivePulseProps> = ({ onClose, isActive, current
         clientRef.current?.stop();
         clientRef.current = null;
     };
-  }, [isActive, onClose]); // Removed currentHtml to prevent reconnection on content change
+  }, [isActive, onClose, liveConfig]); // Re-connect if config changes (though practically modal closes first)
 
   if (!isActive) return null;
 

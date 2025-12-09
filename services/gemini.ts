@@ -6,9 +6,6 @@
 import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
 import { getSystemInstruction, GENERIC_SYSTEM_INSTRUCTION } from "../lib/prompts/kb-article";
 
-// Using gemini-3-pro-preview for complex coding tasks.
-const GEMINI_MODEL = 'gemini-3-pro-preview';
-
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 export interface ChatMessage {
@@ -28,7 +25,8 @@ export async function bringToLife(
     currentPrompt: string, 
     attachments: Attachment[] = [],
     templateType: string = 'auto',
-    onChunk?: (text: string) => void
+    onChunk?: (text: string) => void,
+    modelName: string = 'gemini-3-pro-preview'
 ): Promise<string> {
   const parts: any[] = [];
   
@@ -93,7 +91,7 @@ export async function bringToLife(
 
   try {
     const responseStream = await ai.models.generateContentStream({
-      model: GEMINI_MODEL,
+      model: modelName,
       contents: {
         parts: parts
       },

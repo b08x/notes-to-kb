@@ -23,6 +23,11 @@ const editDocumentTool: FunctionDeclaration = {
   }
 };
 
+export interface LiveConfig {
+    model: string;
+    voice: string;
+}
+
 export class LiveClient {
   private client: GoogleGenAI;
   private sessionPromise: Promise<any> | null = null;
@@ -43,7 +48,7 @@ export class LiveClient {
     this.onToolCall = onToolCall;
   }
 
-  async connect(onClose: () => void) {
+  async connect(onClose: () => void, config?: LiveConfig) {
     // 1. Setup Audio Contexts
     this.inputAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({
       sampleRate: INPUT_SAMPLE_RATE,
@@ -55,6 +60,9 @@ export class LiveClient {
     this.outputNode.connect(this.outputAudioContext.destination);
 
     // Prepare System Instruction with Context
+    // NOTE: Truncated to 8000 chars to prevent WS handshake failure (Network Error)
+    const contextSafe = this.initialContext.substring(0, 8000).replace(/`/g, "'");
+    
     const systemInstruction = `You are a helpful, expert technical assistant for the "Notes to KB" app. 
     Your goal is to help the user understand how to create Knowledge Base articles, suggest improvements, or just chat about their documentation needs.
     
@@ -63,45 +71,54 @@ export class LiveClient {
     
     CURRENT DOCUMENT CONTEXT:
     \`\`\`html
-    ${this.initialContext.substring(0, 20000)} 
+    ${contextSafe} 
     \`\`\`
-    (Context truncated if too long. Assume standard HTML structure.)
+    (Context truncated. Assume standard HTML structure.)
     
     Keep verbal responses concise and conversational.`;
 
-    // 2. Setup Live Session
-    this.sessionPromise = this.client.live.connect({
-      model: 'gemini-2.5-flash-native-audio-preview-09-2025',
-      config: {
-        responseModalities: [Modality.AUDIO],
-        tools: [{ functionDeclarations: [editDocumentTool] }],
-        speechConfig: {
-          voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } },
-        },
-        systemInstruction: systemInstruction,
-      },
-      callbacks: {
-        onopen: async () => {
-          console.log("Live Session Connected");
-          await this.startAudioInput();
-        },
-        onmessage: async (msg: LiveServerMessage) => {
-          this.handleMessage(msg);
-        },
-        onclose: () => {
-          console.log("Live Session Closed");
-          this.stop();
-          onClose();
-        },
-        onerror: (err) => {
-          console.error("Live Session Error:", err);
-          this.stop();
-          onClose();
-        }
-      }
-    });
+    const modelName = config?.model || 'gemini-2.5-flash-native-audio-preview-09-2025';
+    const voiceName = config?.voice || 'Kore';
 
-    await this.sessionPromise;
+    // 2. Setup Live Session
+    try {
+        this.sessionPromise = this.client.live.connect({
+          model: modelName,
+          config: {
+            responseModalities: [Modality.AUDIO],
+            tools: [{ functionDeclarations: [editDocumentTool] }],
+            speechConfig: {
+              voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceName } },
+            },
+            systemInstruction: systemInstruction,
+          },
+          callbacks: {
+            onopen: async () => {
+              console.log("Live Session Connected");
+              await this.startAudioInput();
+            },
+            onmessage: async (msg: LiveServerMessage) => {
+              this.handleMessage(msg);
+            },
+            onclose: () => {
+              console.log("Live Session Closed");
+              this.stop();
+              onClose();
+            },
+            onerror: (err) => {
+              console.error("Live Session Error:", err);
+              this.stop();
+              onClose();
+            }
+          }
+        });
+
+        await this.sessionPromise;
+    } catch (error) {
+        console.error("Failed to establish Live Session:", error);
+        this.stop();
+        throw error;
+    }
   }
 
   private async startAudioInput() {
