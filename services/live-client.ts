@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -28,6 +29,12 @@ export interface LiveConfig {
     voice: string;
 }
 
+export interface LiveClientCallbacks {
+    onToolCall?: (html: string) => void;
+    onVolume?: (vol: number) => void;
+    onTranscription?: (text: string, source: 'user' | 'model') => void;
+}
+
 export class LiveClient {
   private client: GoogleGenAI;
   private sessionPromise: Promise<any> | null = null;
@@ -38,14 +45,13 @@ export class LiveClient {
   private outputNode: GainNode | null = null;
   private nextStartTime = 0;
   private sources = new Set<AudioBufferSourceNode>();
-  private onVolumeUpdate?: (level: number) => void;
-  private onToolCall?: (html: string) => void;
   private initialContext: string = "";
+  private callbacks: LiveClientCallbacks;
 
-  constructor(apiKey: string, initialContext: string = "", onToolCall?: (html: string) => void) {
+  constructor(apiKey: string, initialContext: string = "", callbacks: LiveClientCallbacks = {}) {
     this.client = new GoogleGenAI({ apiKey });
     this.initialContext = initialContext;
-    this.onToolCall = onToolCall;
+    this.callbacks = callbacks;
   }
 
   async connect(onClose: () => void, config?: LiveConfig) {
@@ -91,6 +97,8 @@ export class LiveClient {
               voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceName } },
             },
             systemInstruction: systemInstruction,
+            inputAudioTranscription: {},
+            outputAudioTranscription: {},
           },
           callbacks: {
             onopen: async () => {
@@ -135,13 +143,13 @@ export class LiveClient {
         const inputData = e.inputBuffer.getChannelData(0);
         
         // Calculate volume for visualizer
-        if (this.onVolumeUpdate) {
+        if (this.callbacks.onVolume) {
             let sum = 0;
             for (let i = 0; i < inputData.length; i++) {
                 sum += inputData[i] * inputData[i];
             }
             const rms = Math.sqrt(sum / inputData.length);
-            this.onVolumeUpdate(rms);
+            this.callbacks.onVolume(rms);
         }
 
         // Convert to PCM and send
@@ -176,6 +184,17 @@ export class LiveClient {
       this.stopAudioPlayback();
     }
 
+    // Handle Transcription
+    const outText = message.serverContent?.outputTranscription?.text;
+    if (outText) {
+        this.callbacks.onTranscription?.(outText, 'model');
+    }
+    
+    const inText = message.serverContent?.inputTranscription?.text;
+    if (inText) {
+        this.callbacks.onTranscription?.(inText, 'user');
+    }
+
     // Handle Tool Calls
     if (message.toolCall) {
         const functionCalls = message.toolCall.functionCalls;
@@ -187,8 +206,8 @@ export class LiveClient {
                     console.log("Executing Tool: edit_document");
                     const newHtml = (call.args as any)['html'];
                     
-                    if (newHtml && this.onToolCall) {
-                        this.onToolCall(newHtml);
+                    if (newHtml && this.callbacks.onToolCall) {
+                        this.callbacks.onToolCall(newHtml);
                     }
 
                     responses.push({
@@ -286,10 +305,6 @@ export class LiveClient {
     }
     
     this.sessionPromise = null;
-  }
-
-  public setVolumeCallback(cb: (vol: number) => void) {
-      this.onVolumeUpdate = cb;
   }
 
   // UTILS

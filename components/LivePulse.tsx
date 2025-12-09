@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 import React, { useEffect, useRef, useState } from 'react';
-import { XMarkIcon, MicrophoneIcon, BoltIcon, SignalIcon, SpeakerWaveIcon } from '@heroicons/react/24/solid';
+import { XMarkIcon, MicrophoneIcon, BoltIcon } from '@heroicons/react/24/solid';
 import { LiveClient } from '../services/live-client';
 
 interface LivePulseProps {
@@ -19,6 +19,7 @@ interface LivePulseProps {
 export const LivePulse: React.FC<LivePulseProps> = ({ onClose, isActive, currentHtml, onUpdateHtml, mode = 'overlay', liveConfig }) => {
   const [volume, setVolume] = useState(0);
   const [status, setStatus] = useState<'connecting' | 'active' | 'error'>('connecting');
+  const [transcription, setTranscription] = useState<{user: string, model: string}>({ user: '', model: '' });
   const clientRef = useRef<LiveClient | null>(null);
 
   // Store callbacks in refs to prevent useEffect re-triggering
@@ -33,24 +34,47 @@ export const LivePulse: React.FC<LivePulseProps> = ({ onClose, isActive, current
             try {
                 const apiKey = process.env.API_KEY || '';
                 
-                // Initialize Client with Tool Handler
+                // Initialize Client with Callbacks
                 const client = new LiveClient(
                     apiKey, 
                     currentHtml || "", 
-                    (newHtml) => {
-                        if (callbacksRef.current.onUpdateHtml) {
-                            console.log("Live Pulse received new HTML, updating...");
-                            callbacksRef.current.onUpdateHtml(newHtml);
+                    {
+                        onToolCall: (newHtml) => {
+                            if (callbacksRef.current.onUpdateHtml) {
+                                console.log("Live Pulse received new HTML, updating...");
+                                callbacksRef.current.onUpdateHtml(newHtml);
+                            }
+                        },
+                        onVolume: (vol) => {
+                             setVolume(prev => prev * 0.8 + vol * 0.2);
+                        },
+                        onTranscription: (text, source) => {
+                            setTranscription(prev => {
+                                // If a new user utterance starts, implies a new turn, so maybe clear previous context?
+                                // For now, we just accumulate current turn.
+                                // If source is user and model has text, it means user interrupted or model finished -> clear model text for clarity?
+                                // Let's keep it simple: just append.
+                                // Actually, clearing 'other' source on new input helps readability.
+                                if (source === 'user' && prev.model.length > 0 && text.length < 5) {
+                                     // Heuristic: New user speech start -> Clear model buffer
+                                     return { user: prev.user + text, model: '' };
+                                }
+                                if (source === 'model' && prev.user.length > 0 && text.length < 5) {
+                                     // Heuristic: New model speech start -> keep user text visible until it gets too long?
+                                     // Actually usually we want to see Q & A. 
+                                     return { ...prev, model: prev.model + text };
+                                }
+
+                                return {
+                                    ...prev,
+                                    [source]: prev[source] + text
+                                };
+                            });
                         }
                     }
                 );
                 
                 clientRef.current = client;
-                
-                client.setVolumeCallback((vol) => {
-                    // Smooth volume
-                    setVolume(prev => prev * 0.8 + vol * 0.2);
-                });
 
                 await client.connect(() => {
                     onClose();
@@ -100,7 +124,7 @@ export const LivePulse: React.FC<LivePulseProps> = ({ onClose, isActive, current
             </button>
 
             {/* Main Visualizer */}
-            <div className="relative z-10 flex flex-col items-center gap-8 w-full max-w-2xl px-8">
+            <div className="relative z-10 flex flex-col items-center gap-8 w-full max-w-3xl px-8">
                 <div className="flex items-center justify-center gap-4 w-full h-32">
                     {/* Left Bar */}
                     <div className="flex-1 h-1 bg-zinc-800 rounded-full overflow-hidden flex justify-end">
@@ -131,14 +155,20 @@ export const LivePulse: React.FC<LivePulseProps> = ({ onClose, isActive, current
                     </div>
                 </div>
 
-                {/* Instructions / Feedback */}
-                <div className="text-center space-y-2">
-                    <h2 className="text-2xl md:text-3xl font-bold text-white tracking-tight">
-                        Listening<span className="animate-pulse">...</span>
-                    </h2>
-                    <p className="text-zinc-500 text-sm md:text-base max-w-md mx-auto">
-                        Speak naturally to refine the document. Try saying "Change the header color to blue" or "Add a section about prerequisites."
-                    </p>
+                {/* Transcription Display */}
+                <div className="w-full min-h-[100px] flex flex-col items-center justify-center space-y-4 text-center">
+                    {transcription.user && (
+                         <p className="text-zinc-400 text-lg md:text-xl font-medium italic animate-in fade-in slide-in-from-bottom-2">
+                             "{transcription.user}"
+                         </p>
+                    )}
+                    {transcription.model ? (
+                         <p className="text-white text-xl md:text-2xl font-bold leading-relaxed animate-in fade-in slide-in-from-bottom-2 text-balance">
+                             {transcription.model}
+                         </p>
+                    ) : !transcription.user && (
+                        <p className="text-zinc-600 text-sm">Listening...</p>
+                    )}
                 </div>
             </div>
             
@@ -164,7 +194,7 @@ export const LivePulse: React.FC<LivePulseProps> = ({ onClose, isActive, current
     <div className="fixed bottom-6 right-6 z-[100] flex flex-col items-end pointer-events-none">
         
         {/* Floating Card */}
-        <div className="pointer-events-auto relative w-72 bg-[#121214]/90 backdrop-blur-md border border-zinc-700/50 rounded-2xl p-4 shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-300 flex items-center gap-4">
+        <div className="pointer-events-auto relative w-80 bg-[#121214]/90 backdrop-blur-md border border-zinc-700/50 rounded-2xl p-4 shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-300 flex items-center gap-4">
             
             {/* Visualizer Orb */}
             <div className="relative w-12 h-12 flex-shrink-0 flex items-center justify-center">
@@ -184,21 +214,33 @@ export const LivePulse: React.FC<LivePulseProps> = ({ onClose, isActive, current
                 <MicrophoneIcon className="relative w-4 h-4 text-white z-10 opacity-90" />
             </div>
 
-            {/* Status Text */}
-            <div className="flex-1 min-w-0">
-                <h3 className="text-sm font-bold text-white leading-tight flex items-center gap-1.5">
+            {/* Status & Caption */}
+            <div className="flex-1 min-w-0 flex flex-col justify-center">
+                <h3 className="text-sm font-bold text-white leading-tight flex items-center gap-1.5 mb-0.5">
                     Gemini Live
                     <BoltIcon className="w-3 h-3 text-yellow-500 animate-pulse" />
                 </h3>
-                <p className="text-[10px] text-zinc-400 truncate">
-                    {status === 'connecting' ? 'Connecting...' : 'Listening... Say "Change..."'}
-                </p>
+                <div className="min-h-[1.2em]">
+                    {transcription.model ? (
+                        <p className="text-[10px] text-white font-medium line-clamp-2 leading-tight">
+                            {transcription.model}
+                        </p>
+                    ) : transcription.user ? (
+                         <p className="text-[10px] text-zinc-400 italic line-clamp-1 leading-tight">
+                            "{transcription.user}"
+                        </p>
+                    ) : (
+                        <p className="text-[10px] text-zinc-500 truncate">
+                            {status === 'connecting' ? 'Connecting...' : 'Listening...'}
+                        </p>
+                    )}
+                </div>
             </div>
 
             {/* Close Button */}
             <button 
                 onClick={onClose}
-                className="p-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-full text-zinc-400 hover:text-white transition-colors border border-zinc-700"
+                className="p-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-full text-zinc-400 hover:text-white transition-colors border border-zinc-700 flex-shrink-0"
             >
                 <XMarkIcon className="w-4 h-4" />
             </button>
