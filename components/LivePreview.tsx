@@ -587,19 +587,19 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
                         <button 
                             onClick={() => setIsEditing(true)}
                             disabled={isLoading}
-                            className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:bg-zinc-800 rounded-md transition-colors border border-transparent hover:border-zinc-700 disabled:opacity-50"
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-zinc-200 bg-zinc-800/50 hover:bg-zinc-700 border border-zinc-700/50 hover:border-zinc-600 rounded-lg transition-all shadow-sm disabled:opacity-50"
                             title="Edit Content Text"
                         >
-                            <PencilIcon className="w-3.5 h-3.5" />
+                            <PencilIcon className="w-4 h-4" />
                             <span>Edit Text</span>
                         </button>
                         <button 
                             onClick={() => setShowStyleEditor(true)}
                             disabled={isLoading}
-                            className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:bg-zinc-800 rounded-md transition-colors border border-transparent hover:border-zinc-700 disabled:opacity-50"
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-zinc-200 bg-zinc-800/50 hover:bg-zinc-700 border border-zinc-700/50 hover:border-zinc-600 rounded-lg transition-all shadow-sm disabled:opacity-50"
                             title="Edit Styles"
                         >
-                            <PaintBrushIcon className="w-3.5 h-3.5" />
+                            <PaintBrushIcon className="w-4 h-4" />
                             <span>Style</span>
                         </button>
                     </>
@@ -613,30 +613,30 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
                                     className="p-1.5 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-md transition-colors"
                                     title="Undo"
                                 >
-                                    <ArrowUturnLeftIcon className="w-3.5 h-3.5" />
+                                    <ArrowUturnLeftIcon className="w-4 h-4" />
                                 </button>
                                 <button
                                     onClick={handleRedo}
                                     className="p-1.5 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-md transition-colors"
                                     title="Redo"
                                 >
-                                    <ArrowUturnRightIcon className="w-3.5 h-3.5" />
+                                    <ArrowUturnRightIcon className="w-4 h-4" />
                                 </button>
                             </div>
                          )}
 
                          <button 
                             onClick={handleSaveEdit}
-                            className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium text-emerald-400 hover:bg-emerald-500/10 rounded-md transition-colors border border-emerald-500/20"
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 rounded-lg transition-all shadow-sm"
                         >
-                            <CheckIcon className="w-3.5 h-3.5" />
+                            <CheckIcon className="w-4 h-4" />
                             <span>Save</span>
                         </button>
                         <button 
                             onClick={handleCancelEdit}
-                            className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium text-zinc-400 hover:bg-zinc-800 rounded-md transition-colors"
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-zinc-400 hover:text-white hover:bg-zinc-800 border border-transparent hover:border-zinc-700 rounded-lg transition-all"
                         >
-                            <XMarkIcon className="w-3.5 h-3.5" />
+                            <XMarkIcon className="w-4 h-4" />
                             <span>Cancel</span>
                         </button>
                     </>
@@ -647,10 +647,10 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
                 {onToggleLive && (
                     <button 
                         onClick={onToggleLive}
-                        className={`flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors border ${isLive ? 'bg-red-500/10 text-red-400 border-red-500/20 hover:bg-red-500/20' : 'text-zinc-300 hover:bg-zinc-800 border-transparent hover:border-zinc-700'}`}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-all shadow-sm border ${isLive ? 'bg-red-500/20 text-red-200 border-red-500/40 hover:bg-red-500/30 shadow-red-900/20' : 'text-zinc-200 bg-zinc-800/50 hover:bg-zinc-700 border-zinc-700/50 hover:border-zinc-600'}`}
                         title={isLive ? "Stop Live Session" : "Start Live Editing"}
                     >
-                        <BoltIcon className={`w-3.5 h-3.5 ${isLive ? 'animate-pulse' : ''}`} />
+                        <BoltIcon className={`w-4 h-4 ${isLive ? 'animate-pulse' : ''}`} />
                         <span>{isLive ? 'Live Active' : 'Live Edit'}</span>
                     </button>
                 )}
@@ -660,19 +660,19 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
                 <button 
                     onClick={handleExportDocx}
                     disabled={isExporting || isEditing || showStyleEditor}
-                    className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:bg-zinc-800 rounded-md transition-colors border border-transparent hover:border-zinc-700 disabled:opacity-50"
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-zinc-200 bg-zinc-800/50 hover:bg-zinc-700 border border-zinc-700/50 hover:border-zinc-600 rounded-lg transition-all shadow-sm disabled:opacity-50"
                     title="Export as Standard Compatible Word Doc"
                 >
                     {isExporting ? (
-                        <div className="w-3.5 h-3.5 border-2 border-zinc-400 border-t-transparent rounded-full animate-spin"></div>
+                        <div className="w-4 h-4 border-2 border-zinc-400 border-t-transparent rounded-full animate-spin"></div>
                     ) : (
-                        <DocumentTextIcon className="w-3.5 h-3.5" />
+                        <DocumentTextIcon className="w-4 h-4" />
                     )}
                     <span>Export DOCX</span>
                 </button>
                 <button 
                     onClick={handleExportJson}
-                    className="p-1.5 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 rounded-md transition-colors"
+                    className="p-2 text-zinc-400 bg-zinc-800/30 hover:bg-zinc-800 hover:text-white border border-transparent hover:border-zinc-700 rounded-lg transition-all"
                     title="Export JSON"
                 >
                     <ArrowDownTrayIcon className="w-4 h-4" />
@@ -682,7 +682,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
 
                 <button 
                     onClick={() => setIsFullScreen(!isFullScreen)}
-                    className="p-1.5 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-md transition-colors"
+                    className="p-2 text-zinc-400 bg-zinc-800/30 hover:bg-zinc-800 hover:text-white border border-transparent hover:border-zinc-700 rounded-lg transition-all"
                     title={isFullScreen ? "Exit Full Screen" : "Enter Full Screen"}
                 >
                     {isFullScreen ? (
