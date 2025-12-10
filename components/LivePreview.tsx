@@ -176,6 +176,13 @@ const rgbToHex = (rgb: string) => {
     return "#" + r + g + b;
 };
 
+interface StyleAction {
+    element: HTMLElement;
+    property: string;
+    oldValue: string;
+    newValue: string;
+}
+
 export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, loadingMessage, className = "", imageMap = {}, onUpdateArtifact, isLive, onToggleLive }) => {
     const [isExporting, setIsExporting] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
@@ -192,6 +199,9 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
         maxWidth: '',
         boxShadow: ''
     });
+
+    const [styleHistory, setStyleHistory] = useState<StyleAction[]>([]);
+    const [styleRedoStack, setStyleRedoStack] = useState<StyleAction[]>([]);
     
     // Audio Feedback State Refs
     const stopGenerationSoundRef = useRef<(() => void) | null>(null);
@@ -226,6 +236,14 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
             }
         };
     }, []);
+
+    // Reset style history when style editor is toggled off
+    useEffect(() => {
+        if (!showStyleEditor) {
+            setStyleHistory([]);
+            setStyleRedoStack([]);
+        }
+    }, [showStyleEditor]);
 
     // Process HTML to inject image data and edit styles
     const processedHtml = useMemo(() => {
@@ -447,16 +465,61 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
 
     const handleStyleChange = (prop: string, value: string) => {
         if (!selectedEl) return;
+        
+        const oldValue = (selectedEl.style as any)[prop];
         (selectedEl.style as any)[prop] = value;
         setStyleValues(prev => ({ ...prev, [prop]: value }));
+
+        // History
+        setStyleHistory(prev => [...prev, {
+            element: selectedEl,
+            property: prop,
+            oldValue: oldValue || '',
+            newValue: value
+        }]);
+        setStyleRedoStack([]);
     };
 
     const handleUndo = () => {
-        iframeRef.current?.contentDocument?.execCommand('undo');
+        if (showStyleEditor) {
+            setStyleHistory(prev => {
+                if (prev.length === 0) return prev;
+                const newHistory = [...prev];
+                const action = newHistory.pop()!;
+                
+                (action.element.style as any)[action.property] = action.oldValue;
+                
+                if (selectedEl === action.element) {
+                    setStyleValues(v => ({ ...v, [action.property]: action.oldValue }));
+                }
+
+                setStyleRedoStack(redo => [...redo, action]);
+                return newHistory;
+            });
+        } else {
+            iframeRef.current?.contentDocument?.execCommand('undo');
+        }
     };
 
     const handleRedo = () => {
-        iframeRef.current?.contentDocument?.execCommand('redo');
+        if (showStyleEditor) {
+            setStyleRedoStack(prev => {
+                if (prev.length === 0) return prev;
+                const newRedo = [...prev];
+                const action = newRedo.pop()!;
+                
+                (action.element.style as any)[action.property] = action.newValue;
+
+                if (selectedEl === action.element) {
+                    setStyleValues(v => ({ ...v, [action.property]: action.newValue }));
+                }
+
+                setStyleHistory(hist => [...hist, action]);
+                return newRedo;
+            });
+        } else {
+            iframeRef.current?.contentDocument?.execCommand('redo');
+        }
     };
 
     const handleSaveEdit = () => {
@@ -587,7 +650,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
                         <button 
                             onClick={() => setIsEditing(true)}
                             disabled={isLoading}
-                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-zinc-200 bg-zinc-800/50 hover:bg-zinc-700 border border-zinc-700/50 hover:border-zinc-600 rounded-lg transition-all shadow-sm disabled:opacity-50"
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-zinc-200 bg-zinc-800 bg-zinc-800 border border-zinc-700 hover:border-zinc-500 rounded-lg transition-all shadow-sm disabled:opacity-50"
                             title="Edit Content Text"
                         >
                             <PencilIcon className="w-4 h-4" />
@@ -596,7 +659,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
                         <button 
                             onClick={() => setShowStyleEditor(true)}
                             disabled={isLoading}
-                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-zinc-200 bg-zinc-800/50 hover:bg-zinc-700 border border-zinc-700/50 hover:border-zinc-600 rounded-lg transition-all shadow-sm disabled:opacity-50"
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-zinc-200 bg-zinc-800 bg-zinc-800 border border-zinc-700 hover:border-zinc-500 rounded-lg transition-all shadow-sm disabled:opacity-50"
                             title="Edit Styles"
                         >
                             <PaintBrushIcon className="w-4 h-4" />
@@ -605,19 +668,29 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
                     </>
                 ) : (
                     <>
-                        {/* Undo / Redo - Only for Text Edit really, but useful generally */}
-                         {isEditing && (
+                        {/* Undo / Redo - Enabled for both Text and Style modes */}
+                         {(isEditing || showStyleEditor) && (
                              <div className="flex items-center space-x-1 border-r border-zinc-800 pr-2 mr-1">
                                 <button
                                     onClick={handleUndo}
-                                    className="p-1.5 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-md transition-colors"
+                                    disabled={showStyleEditor ? styleHistory.length === 0 : false}
+                                    className={`p-1.5 rounded-md transition-colors ${
+                                        (showStyleEditor && styleHistory.length === 0) 
+                                        ? 'text-zinc-700 cursor-not-allowed' 
+                                        : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
+                                    }`}
                                     title="Undo"
                                 >
                                     <ArrowUturnLeftIcon className="w-4 h-4" />
                                 </button>
                                 <button
                                     onClick={handleRedo}
-                                    className="p-1.5 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-md transition-colors"
+                                    disabled={showStyleEditor ? styleRedoStack.length === 0 : false}
+                                    className={`p-1.5 rounded-md transition-colors ${
+                                        (showStyleEditor && styleRedoStack.length === 0) 
+                                        ? 'text-zinc-700 cursor-not-allowed' 
+                                        : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
+                                    }`}
                                     title="Redo"
                                 >
                                     <ArrowUturnRightIcon className="w-4 h-4" />
@@ -647,7 +720,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
                 {onToggleLive && (
                     <button 
                         onClick={onToggleLive}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-all shadow-sm border ${isLive ? 'bg-red-500/20 text-red-200 border-red-500/40 hover:bg-red-500/30 shadow-red-900/20' : 'text-zinc-200 bg-zinc-800/50 hover:bg-zinc-700 border-zinc-700/50 hover:border-zinc-600'}`}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-all shadow-sm border ${isLive ? 'bg-red-500/20 text-red-200 border-red-500/40 hover:bg-red-500/30 shadow-red-900/20' : 'text-zinc-200 bg-zinc-800 border-zinc-700 hover:border-zinc-500'}`}
                         title={isLive ? "Stop Live Session" : "Start Live Editing"}
                     >
                         <BoltIcon className={`w-4 h-4 ${isLive ? 'animate-pulse' : ''}`} />
@@ -660,7 +733,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
                 <button 
                     onClick={handleExportDocx}
                     disabled={isExporting || isEditing || showStyleEditor}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-zinc-200 bg-zinc-800/50 hover:bg-zinc-700 border border-zinc-700/50 hover:border-zinc-600 rounded-lg transition-all shadow-sm disabled:opacity-50"
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-zinc-200 bg-zinc-800 border border-zinc-700 hover:border-zinc-500 rounded-lg transition-all shadow-sm disabled:opacity-50"
                     title="Export as Standard Compatible Word Doc"
                 >
                     {isExporting ? (

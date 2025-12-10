@@ -11,12 +11,8 @@ import {
   TextRun,
   HeadingLevel,
   ImageRun,
-  LevelFormat,
   AlignmentType,
-  ConvertInchesToTwip,
-  IParagraphOptions,
   FileChild,
-  BorderStyle
 } from "docx";
 
 export class DocxGenerator {
@@ -154,6 +150,11 @@ export class DocxGenerator {
 
   private async parseNode(element: Element): Promise<FileChild | FileChild[] | null> {
     const tagName = element.tagName.toLowerCase();
+    
+    // Ignore non-content tags
+    if (['style', 'script', 'head', 'meta', 'link', 'title', 'noscript'].includes(tagName)) {
+        return null;
+    }
 
     switch (tagName) {
       case "h1":
@@ -278,19 +279,29 @@ export class DocxGenerator {
            });
            return paragraphs;
         }
-        // Generic div fallthrough
-        return new Paragraph({
-            text: element.textContent || "",
-            style: "Normal"
-        });
+        // Generic div fallthrough - if it has content, treat as paragraph
+        if (element.textContent?.trim() && !element.querySelector('p, div, ul, ol, h1, h2, h3, h4')) {
+             return new Paragraph({
+                children: this.parseInlineChildren(element),
+                style: "Normal"
+            });
+        }
+        return null;
 
       default:
-        // Fallback for unknown block elements
-        if (element.textContent?.trim()) {
-           return new Paragraph({
-               text: element.textContent || "",
-               style: "Normal"
-           });
+        // Fallback for unknown block elements that contain text
+        if (element.textContent?.trim() && element.childNodes.length > 0) {
+            // Check if it's just text or inline nodes
+            const hasBlockChildren = Array.from(element.children).some(c => 
+                ['p', 'div', 'h1', 'h2', 'h3', 'ul', 'ol', 'table'].includes(c.tagName.toLowerCase())
+            );
+            
+            if (!hasBlockChildren) {
+                 return new Paragraph({
+                    children: this.parseInlineChildren(element),
+                    style: "Normal"
+                 });
+            }
         }
         return null;
     }
@@ -299,40 +310,84 @@ export class DocxGenerator {
   private parseInlineChildren(element: Element): (TextRun | ImageRun)[] {
     const runs: (TextRun | ImageRun)[] = [];
     
+    // Attempt to extract inline styles from the parent element to pass down to children text
+    const htmlEl = element as HTMLElement;
+    let inheritedColor: string | undefined = undefined;
+    let inheritedSize: number | undefined = undefined;
+
+    if (htmlEl.style) {
+        if (htmlEl.style.color) {
+            inheritedColor = this.parseColor(htmlEl.style.color);
+        }
+        if (htmlEl.style.fontSize) {
+            inheritedSize = this.parseFontSize(htmlEl.style.fontSize);
+        }
+    }
+
     element.childNodes.forEach((node) => {
       if (node.nodeType === Node.TEXT_NODE) {
         if (node.textContent) {
           runs.push(new TextRun({
              text: node.textContent,
              font: "Arial",
-             size: 22
+             size: inheritedSize || 22,
+             color: inheritedColor || undefined
           }));
         }
       } else if (node.nodeType === Node.ELEMENT_NODE) {
         const el = node as Element;
         const tagName = el.tagName.toLowerCase();
         
+        // Check local styles for the inline element
+        const childHtmlEl = el as HTMLElement;
+        let childColor = inheritedColor;
+        let childSize = inheritedSize || 22;
+
+        if (childHtmlEl.style) {
+            if (childHtmlEl.style.color) {
+                const c = this.parseColor(childHtmlEl.style.color);
+                if (c) childColor = c;
+            }
+            if (childHtmlEl.style.fontSize) {
+                const s = this.parseFontSize(childHtmlEl.style.fontSize);
+                if (s) childSize = s;
+            }
+        }
+
         if (tagName === 'strong' || tagName === 'b') {
             runs.push(new TextRun({
                 text: el.textContent || "",
                 bold: true,
                 font: "Arial",
-                size: 22
+                size: childSize,
+                color: childColor
             }));
         } else if (tagName === 'code') {
             runs.push(new TextRun({
                 text: el.textContent || "",
                 font: "Courier New",
-                size: 22 // 11pt matches body
+                size: childSize,
+                color: childColor
             }));
-        } else if (tagName === 'span' && el.classList.contains('warning')) {
-            runs.push(new TextRun({
-                text: el.textContent || "",
-                bold: true,
-                color: "FF0000",
-                font: "Arial",
-                size: 22
-            }));
+        } else if (tagName === 'span') {
+             // Handle span with warning class specifically
+            if (el.classList.contains('warning')) {
+                runs.push(new TextRun({
+                    text: el.textContent || "",
+                    bold: true,
+                    color: "FF0000",
+                    font: "Arial",
+                    size: childSize
+                }));
+            } else {
+                // Generic span, apply styles
+                runs.push(new TextRun({
+                    text: el.textContent || "",
+                    font: "Arial",
+                    size: childSize,
+                    color: childColor
+                }));
+            }
         } else if (tagName === 'br') {
             runs.push(new TextRun({
                 text: "\n"
@@ -341,13 +396,43 @@ export class DocxGenerator {
              runs.push(new TextRun({
                  text: el.textContent || "",
                  font: "Arial",
-                 size: 22
+                 size: childSize,
+                 color: childColor
              }));
         }
       }
     });
 
     return runs;
+  }
+
+  private parseColor(color: string): string | undefined {
+      if (!color) return undefined;
+      // Handle hex
+      if (color.startsWith('#')) return color.substring(1);
+      // Handle rgb
+      if (color.startsWith('rgb')) {
+          const match = color.match(/\d+/g);
+          if (match && match.length >= 3) {
+              const r = parseInt(match[0]).toString(16).padStart(2, '0');
+              const g = parseInt(match[1]).toString(16).padStart(2, '0');
+              const b = parseInt(match[2]).toString(16).padStart(2, '0');
+              return `${r}${g}${b}`;
+          }
+      }
+      return undefined;
+  }
+
+  private parseFontSize(sizeStr: string): number | undefined {
+      if (!sizeStr) return undefined;
+      const match = sizeStr.match(/(\d+(\.\d+)?)/);
+      if (match) {
+          const val = parseFloat(match[1]);
+          // Approximate conversion: 1px = 1.5 half-points (assuming 96dpi where 1px=0.75pt, and docx uses half-points)
+          // 16px -> 12pt -> 24 half-points.
+          return Math.round(val * 1.5);
+      }
+      return undefined;
   }
 
   private async createImageRun(img: HTMLImageElement): Promise<Paragraph | null> {
@@ -401,6 +486,19 @@ export class DocxGenerator {
         let finalWidth = naturalWidth;
         let finalHeight = naturalHeight;
 
+        // Check if inline styles have width override
+        if (img.style && img.style.width) {
+             const w = parseFloat(img.style.width);
+             if (!isNaN(w)) {
+                 // Assume pixel intent, but check if it's small or large
+                 // If user set style="width: 50%", we can't easily parse that without context
+                 // But visual editor sets pixels? Or %?
+                 // The visual editor sets style.maxWidth?
+                 // Let's stick to natural dimensions logic capped at MAX_WIDTH for robustness
+             }
+        }
+        
+        // Simple resizing
         if (naturalWidth > MAX_WIDTH) {
             const scaleFactor = MAX_WIDTH / naturalWidth;
             finalWidth = MAX_WIDTH;

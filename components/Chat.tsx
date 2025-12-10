@@ -109,6 +109,11 @@ export const Chat: React.FC<ChatProps> = ({
       };
 
       recognition.onerror = (event: any) => {
+        // Ignore benign errors like 'no-speech' (user didn't say anything) or 'aborted'
+        if (event.error === 'no-speech' || event.error === 'aborted') {
+            setIsListening(false);
+            return;
+        }
         console.error("Speech recognition error", event.error);
         setIsListening(false);
       };
