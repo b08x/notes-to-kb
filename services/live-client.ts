@@ -65,22 +65,13 @@ export class LiveClient {
     this.outputNode = this.outputAudioContext.createGain();
     this.outputNode.connect(this.outputAudioContext.destination);
 
-    // Prepare System Instruction with Context
-    // NOTE: Truncated to 4000 chars (down from 8000) to prevent WS handshake failure (Network Error)
-    // The WebSocket initial frame has a size limit.
-    const contextSafe = (this.initialContext || "").substring(0, 4000).replace(/`/g, "'");
-    
+    // Minimal System Instruction for Handshake Stability (Network Error Fix)
+    // We send the full context as a data message immediately after connection.
     const systemInstruction = `You are a helpful, expert technical assistant for the "Notes to KB" app. 
     Your goal is to help the user understand how to create Knowledge Base articles, suggest improvements, or just chat about their documentation needs.
     
     You have access to a tool 'edit_document' which can update the document the user is seeing.
     If the user asks to change styles, fix typos, or restructure the content, generate the FULL updated HTML and call 'edit_document'.
-    
-    CURRENT DOCUMENT CONTEXT:
-    \`\`\`html
-    ${contextSafe} 
-    \`\`\`
-    (Context truncated. Assume standard HTML structure.)
     
     Keep verbal responses concise and conversational.`;
 
@@ -122,7 +113,19 @@ export class LiveClient {
           }
         });
 
-        await this.sessionPromise;
+        // Wait for connection to be fully established
+        const session = await this.sessionPromise;
+
+        // 3. Send Initial Context Post-Handshake
+        if (this.initialContext) {
+            // Truncate safely to ~20k chars to avoid hitting user message limits, 
+            // though much higher than header limits.
+            const contextSafe = this.initialContext.substring(0, 20000).replace(/`/g, "'");
+            session.sendRealtimeInput({
+                text: `[SYSTEM] Context Update. The user is currently viewing the following HTML content:\n\`\`\`html\n${contextSafe}\n\`\`\``
+            });
+        }
+
     } catch (error) {
         console.error("Failed to establish Live Session:", error);
         this.stop();
