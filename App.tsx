@@ -12,6 +12,7 @@ import { InputArea } from './components/InputArea';
 import { Sidebar, ProjectSummary } from './components/Sidebar';
 import { LivePulse } from './components/LivePulse';
 import { SettingsModal, AppSettings } from './components/SettingsModal';
+import { HelpModal } from './components/HelpModal';
 
 interface ProjectData extends ProjectSummary {
     messages: Message[];
@@ -35,8 +36,9 @@ const App: React.FC = () => {
   const [generationStatus, setGenerationStatus] = useState<string>("");
   const [isLiveActive, setIsLiveActive] = useState(false);
   
-  // Settings State
+  // Settings & Help State
   const [showSettings, setShowSettings] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const [appSettings, setAppSettings] = useState<AppSettings>({
       enableLiveApi: true,
       liveModel: 'gemini-2.5-flash-native-audio-preview-09-2025',
@@ -341,6 +343,12 @@ const App: React.FC = () => {
             onUpdateSettings={setAppSettings}
         />
 
+        {/* Help Modal */}
+        <HelpModal 
+            isOpen={showHelp}
+            onClose={() => setShowHelp(false)}
+        />
+
         {/* Sidebar for Sessions */}
         <Sidebar 
             projects={projects}
@@ -349,6 +357,7 @@ const App: React.FC = () => {
             onNewProject={handleNewProject}
             onDeleteProject={handleDeleteProject}
             onOpenSettings={() => setShowSettings(true)}
+            onOpenHelp={() => setShowHelp(true)}
         />
 
         {/* Left Panel: Chat & Inputs (40% width on desktop) */}

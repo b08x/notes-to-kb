@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 import React from 'react';
-import { PlusIcon, FolderIcon, TrashIcon, CubeIcon, Cog6ToothIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, FolderIcon, TrashIcon, CubeIcon, Cog6ToothIcon, QuestionMarkCircleIcon } from '@heroicons/react/24/outline';
 
 export interface ProjectSummary {
   id: string;
@@ -19,6 +19,7 @@ interface SidebarProps {
   onNewProject: () => void;
   onDeleteProject: (id: string) => void;
   onOpenSettings?: () => void;
+  onOpenHelp?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ 
@@ -27,7 +28,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onSelectProject, 
   onNewProject,
   onDeleteProject,
-  onOpenSettings
+  onOpenSettings,
+  onOpenHelp
 }) => {
   return (
     <div className="hidden md:flex w-64 bg-[#09090b] border-r border-zinc-800 flex-col h-full flex-shrink-0 z-20">
@@ -85,8 +87,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
         ))}
       </div>
 
-      {onOpenSettings && (
-         <div className="p-3 border-t border-zinc-800">
+      <div className="p-3 border-t border-zinc-800 space-y-1">
+         {onOpenHelp && (
+            <button 
+                onClick={onOpenHelp}
+                className="w-full flex items-center gap-2 p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+            >
+                <QuestionMarkCircleIcon className="w-5 h-5" />
+                <span className="text-sm font-medium">Help & Docs</span>
+            </button>
+         )}
+         {onOpenSettings && (
             <button 
                 onClick={onOpenSettings}
                 className="w-full flex items-center gap-2 p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
@@ -94,8 +105,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <Cog6ToothIcon className="w-5 h-5" />
                 <span className="text-sm font-medium">Settings</span>
             </button>
-         </div>
-      )}
+         )}
+      </div>
     </div>
   );
 };
