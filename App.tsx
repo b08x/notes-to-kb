@@ -34,7 +34,10 @@ const App: React.FC = () => {
   const [activeProjectId, setActiveProjectId] = useState<string>(projects[0].id);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationStatus, setGenerationStatus] = useState<string>("");
-  const [isLiveActive, setIsLiveActive] = useState(false);
+  
+  // Live State
+  const [isLiveConnected, setIsLiveConnected] = useState(false);
+  const [isLivePanelOpen, setIsLivePanelOpen] = useState(false);
   
   // Settings & Help State
   const [showSettings, setShowSettings] = useState(false);
@@ -165,8 +168,6 @@ const App: React.FC = () => {
       }
 
       // 2. Prepare History from CURRENT project state
-      // Note: We need to access the 'messages' we just updated. 
-      // Since functional update is async/batched, let's reconstruct local history including the new msg.
       const currentHistory = [...activeProject.messages, newUserMsg];
       
       const historyForGemini: ChatMessage[] = await Promise.all(currentHistory.map(async m => {
@@ -218,10 +219,7 @@ const App: React.FC = () => {
           geminiAttachments, 
           templateType, 
           (partialText) => {
-            // Live Assistant Status Logic based on streaming content
             const lower = partialText.toLowerCase();
-            
-            // Basic heuristics to make the assistant feel "alive"
             if (lower.length < 50) {
                 setGenerationStatus("Analyzing your inputs...");
             } else if (lower.includes('<style')) {
@@ -253,7 +251,6 @@ const App: React.FC = () => {
           artifactName = isScreenshotAnalysis ? `Analysis: ${files.length} Files` : `KB from ${files.length} Files`;
       }
 
-      // Pick the first image as the "Original Image" for preview fallback, or undefined
       const primaryImage = geminiAttachments.length > 0 
         ? `data:${geminiAttachments[0].mimeType};base64,${geminiAttachments[0].data}` 
         : undefined;
@@ -279,7 +276,6 @@ const App: React.FC = () => {
       // 3. Update State with AI Message and Active Artifact
       updateActiveProject(p => {
           let newName = p.name;
-          // Rename project if it is untitled and we just generated something
           if ((p.name === 'Untitled Project' || p.name === 'New Project') && activeProject.messages.length === 0) {
               newName = artifactName;
           }
@@ -333,6 +329,11 @@ const App: React.FC = () => {
       });
   };
 
+  const startLiveSession = () => {
+      setIsLiveConnected(true);
+      setIsLivePanelOpen(true); // Open panel by default on start
+  };
+
   return (
     <div className="flex h-[100dvh] bg-[#09090b] text-zinc-50 overflow-hidden font-sans relative">
         {/* Settings Modal */}
@@ -368,7 +369,7 @@ const App: React.FC = () => {
                     <InputArea 
                         onGenerate={(prompt, files, template) => handleSendMessage(prompt, files, 'source', template)} 
                         isGenerating={isGenerating}
-                        onStartLive={appSettings.enableLiveApi ? () => setIsLiveActive(true) : undefined}
+                        onStartLive={appSettings.enableLiveApi ? startLiveSession : undefined}
                     />
                 </div>
             ) : (
@@ -384,44 +385,14 @@ const App: React.FC = () => {
         </div>
 
         {/* Right Panel: Workspace / Preview (Rest of width) */}
-        {/* We use Flex Column to split horizontally when Live is Active */}
         <div className="hidden md:flex flex-1 flex-col h-full bg-[#121214] relative overflow-hidden">
             {/* Dot Grid Background */}
             <div className="absolute inset-0 bg-dot-grid opacity-20 pointer-events-none"></div>
             
-            {isLiveActive ? (
-                // SPLIT VIEW: Preview on Top (50%), Live Panel on Bottom (50%)
-                <>
-                    <div className="h-1/2 w-full relative border-b border-zinc-800 transition-all duration-500">
-                        <LivePreview 
-                            creation={activeProject.activeCreation} 
-                            isLoading={isGenerating} 
-                            loadingMessage={generationStatus}
-                            className="w-full h-full"
-                            imageMap={activeProject.imageMap}
-                            onUpdateArtifact={(id, html) => handleUpdateArtifact(id, html)}
-                            isLive={isLiveActive}
-                            onToggleLive={appSettings.enableLiveApi ? () => setIsLiveActive(!isLiveActive) : undefined}
-                        />
-                    </div>
-                    <div className="h-1/2 w-full relative transition-all duration-500 animate-in fade-in slide-in-from-bottom-10">
-                         <LivePulse 
-                            isActive={isLiveActive} 
-                            onClose={() => setIsLiveActive(false)}
-                            currentHtml={activeProject.activeCreation?.html}
-                            onUpdateHtml={(newHtml) => {
-                                if (activeProject.activeCreation?.id) {
-                                    handleUpdateArtifact(activeProject.activeCreation.id, newHtml);
-                                }
-                            }}
-                            mode="panel" 
-                            liveConfig={{ model: appSettings.liveModel, voice: appSettings.liveVoice }}
-                        />
-                    </div>
-                </>
-            ) : (
-                // FULL SCREEN PREVIEW
-                <div className="flex-1 h-full w-full">
+            {/* Split View Container Logic */}
+            <div className="flex-1 flex flex-col relative w-full h-full">
+                {/* Live Preview - Flexes to fill space or shares space */}
+                <div className={`w-full transition-all duration-500 ease-in-out relative ${isLiveConnected && isLivePanelOpen ? 'h-1/2' : 'h-full'}`}>
                     <LivePreview 
                         creation={activeProject.activeCreation} 
                         isLoading={isGenerating} 
@@ -429,14 +400,45 @@ const App: React.FC = () => {
                         className="w-full h-full shadow-2xl"
                         imageMap={activeProject.imageMap}
                         onUpdateArtifact={(id, html) => handleUpdateArtifact(id, html)}
-                        isLive={isLiveActive}
-                        onToggleLive={appSettings.enableLiveApi ? () => setIsLiveActive(!isLiveActive) : undefined}
+                        isLive={isLiveConnected}
+                        onToggleLive={appSettings.enableLiveApi ? () => {
+                            if (!isLiveConnected) {
+                                startLiveSession();
+                            } else {
+                                setIsLiveConnected(false); // Disconnect fully if clicked from header
+                            }
+                        } : undefined}
                     />
                 </div>
-            )}
+
+                {/* Live Pulse Container - Persistent Mounting */}
+                {isLiveConnected && (
+                    <div className={`
+                        transition-all duration-500 ease-in-out z-50
+                        ${isLivePanelOpen 
+                            ? 'h-1/2 w-full relative border-t border-zinc-800' 
+                            : 'absolute bottom-6 right-6 w-80 h-auto rounded-2xl'
+                        }
+                    `}>
+                        <LivePulse 
+                            isActive={isLiveConnected} 
+                            onClose={() => setIsLiveConnected(false)}
+                            currentHtml={activeProject.activeCreation?.html}
+                            onUpdateHtml={(newHtml) => {
+                                if (activeProject.activeCreation?.id) {
+                                    handleUpdateArtifact(activeProject.activeCreation.id, newHtml);
+                                }
+                            }}
+                            mode={isLivePanelOpen ? 'panel' : 'overlay'} 
+                            onToggleMode={() => setIsLivePanelOpen(!isLivePanelOpen)}
+                            liveConfig={{ model: appSettings.liveModel, voice: appSettings.liveVoice }}
+                        />
+                    </div>
+                )}
+            </div>
         </div>
 
-        {/* Mobile Preview Overlay (Only visible on small screens when artifact is active) */}
+        {/* Mobile Preview Overlay */}
         {activeProject.activeCreation && (
             <div className="md:hidden fixed inset-0 z-50 bg-[#09090b]">
                 <button 
@@ -451,18 +453,20 @@ const App: React.FC = () => {
                     loadingMessage={generationStatus}
                     imageMap={activeProject.imageMap}
                     onUpdateArtifact={(id, html) => handleUpdateArtifact(id, html)}
-                    isLive={isLiveActive}
-                    onToggleLive={appSettings.enableLiveApi ? () => setIsLiveActive(!isLiveActive) : undefined}
+                    isLive={isLiveConnected}
+                    onToggleLive={appSettings.enableLiveApi ? () => {
+                         if (!isLiveConnected) startLiveSession();
+                         else setIsLiveConnected(false);
+                    } : undefined}
                 />
             </div>
         )}
 
-        {/* Live Pulse Assistant Overlay - MOBILE ONLY */}
-        {/* On Desktop, it's embedded in the split view above */}
+        {/* Mobile Live Pulse (Overlay Only) */}
         <div className="md:hidden">
             <LivePulse 
-                isActive={isLiveActive} 
-                onClose={() => setIsLiveActive(false)}
+                isActive={isLiveConnected} 
+                onClose={() => setIsLiveConnected(false)}
                 currentHtml={activeProject.activeCreation?.html}
                 onUpdateHtml={(newHtml) => {
                     if (activeProject.activeCreation?.id) {
@@ -470,6 +474,7 @@ const App: React.FC = () => {
                     }
                 }} 
                 liveConfig={{ model: appSettings.liveModel, voice: appSettings.liveVoice }}
+                mode="overlay"
             />
         </div>
     </div>

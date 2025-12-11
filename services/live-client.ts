@@ -66,8 +66,9 @@ export class LiveClient {
     this.outputNode.connect(this.outputAudioContext.destination);
 
     // Prepare System Instruction with Context
-    // NOTE: Truncated to 8000 chars to prevent WS handshake failure (Network Error)
-    const contextSafe = this.initialContext.substring(0, 8000).replace(/`/g, "'");
+    // NOTE: Truncated to 4000 chars (down from 8000) to prevent WS handshake failure (Network Error)
+    // The WebSocket initial frame has a size limit.
+    const contextSafe = (this.initialContext || "").substring(0, 4000).replace(/`/g, "'");
     
     const systemInstruction = `You are a helpful, expert technical assistant for the "Notes to KB" app. 
     Your goal is to help the user understand how to create Knowledge Base articles, suggest improvements, or just chat about their documentation needs.
@@ -171,6 +172,14 @@ export class LiveClient {
     } catch (error) {
       console.error("Error accessing microphone:", error);
     }
+  }
+  
+  public sendText(text: string) {
+      this.sessionPromise?.then(session => {
+          session.sendRealtimeInput({
+              text: text
+          });
+      });
   }
 
   private async handleMessage(message: LiveServerMessage) {
