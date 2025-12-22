@@ -45,7 +45,7 @@ const App: React.FC = () => {
   const [appSettings, setAppSettings] = useState<AppSettings>({
       enableLiveApi: true,
       liveModel: 'gemini-2.5-flash-native-audio-preview-09-2025',
-      liveVoice: 'Kore',
+      liveVoice: 'Fenrir',
       generationModel: 'gemini-3-pro-preview'
   });
 
