@@ -34,6 +34,7 @@ const App: React.FC = () => {
   const [activeProjectId, setActiveProjectId] = useState<string>(projects[0].id);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationStatus, setGenerationStatus] = useState<string>("");
+  const [streamSize, setStreamSize] = useState<number>(0);
   
   // Live State
   const [isLiveConnected, setIsLiveConnected] = useState(false);
@@ -53,7 +54,6 @@ const App: React.FC = () => {
 
   const activeProject = projects.find(p => p.id === activeProjectId) || projects[0];
 
-  // Derive artifacts from message history for the sidebar
   const currentArtifacts = useMemo(() => {
       const arts: Creation[] = [];
       const seenIds = new Set<string>();
@@ -63,7 +63,7 @@ const App: React.FC = () => {
               seenIds.add(m.artifact.id);
           }
       });
-      return arts.reverse(); // Newest first
+      return arts.reverse();
   }, [activeProject.messages]);
 
   const updateActiveProject = (updater: (project: ProjectData) => ProjectData) => {
@@ -126,7 +126,8 @@ const App: React.FC = () => {
 
   const handleSendMessage = async (text: string, files: File[] = [], fileType: 'source' | 'screenshot' = 'source', templateType: string = 'auto') => {
     setIsGenerating(true);
-    setGenerationStatus("Preparing workspace...");
+    setGenerationStatus("Analyzing Input Context");
+    setStreamSize(0);
     
     const messageId = crypto.randomUUID();
     const newUserMsg: Message = {
@@ -213,29 +214,14 @@ const App: React.FC = () => {
       const isRefinement = activeProject.activeCreation !== null;
       
       if (isScreenshotAnalysis) {
-        modifiedText = `[KB CONTEXT ANALYSIS] I am uploading screenshots for context. Analyze these images for UI elements, errors, and functional states. 
-        CRITICAL: Generate a comprehensive "Screenshot Analysis Report" in HTML. 
-        This report MUST be structured and detailed as it will be used as the primary visual context for the future KB article. 
-        List every Source ID (img-...) found in this analysis request clearly in the HTML so I can map them later.
-        
-        User Instructions: ${text}`;
+        modifiedText = `[KB CONTEXT ANALYSIS] Analyze screenshots for UI elements, errors, and states. Generate a "Screenshot Analysis Report" in HTML.`;
       } else if (isSourceUpload) {
         if (isRefinement) {
-            modifiedText = `[REFINEMENT CONTEXT] Refine the existing artifact using the uploaded reference files as context only. 
-            Do NOT switch the main topic. Maintain document integrity. 
-            Update the HTML with the new reference data.
-            
-            Refinement Request: ${text}`;
+            modifiedText = `[REFINEMENT CONTEXT] Update existing artifact using reference files. Refinement Request: ${text}`;
         } else {
-            // Check history for any Analysis Reports
             const hasAnalysis = currentHistory.some(m => m.artifact?.name.toLowerCase().includes('analysis'));
-            const analysisContext = hasAnalysis ? "\n[System: Use the 'Screenshot Analysis Report' artifacts in the history to enrich this KB with specific visual evidence, error codes, and UI labels.]" : "";
-            
-            modifiedText = `[KB GENERATION] Convert the source documents into a ${templateType !== 'auto' ? templateType : 'Standard KB Article'}. 
-            ${analysisContext} 
-            Use provided image IDs (img-...) if instructed or if you reference specific UI screens analyzed in previous reports.
-            
-            User Note: ${text}`;
+            const analysisContext = hasAnalysis ? "\n[System: Use previous screenshot analysis artifacts for visual labels.]" : "";
+            modifiedText = `[KB GENERATION] Convert to ${templateType !== 'auto' ? templateType : 'Standard KB Article'}. ${analysisContext} ${text}`;
         }
       }
 
@@ -245,24 +231,26 @@ const App: React.FC = () => {
           geminiAttachments, 
           templateType, 
           (partialText) => {
+            setStreamSize(partialText.length);
             const lower = partialText.toLowerCase();
-            if (lower.length < 50) {
-                setGenerationStatus("Reading inputs...");
+            if (lower.length < 100) {
+                setGenerationStatus("Synthesizing Context");
             } else if (lower.includes('<style')) {
-                setGenerationStatus("Designing interface...");
-            } else if (lower.includes('h2') || lower.includes('h3')) {
-                setGenerationStatus("Building structure...");
-            } else if (lower.length > 500) {
-                setGenerationStatus("Refining documentation...");
+                setGenerationStatus("Drafting UI Theme");
+            } else if (lower.includes('<h1') || lower.includes('<h2')) {
+                setGenerationStatus("Structuring Content Hierarchy");
+            } else if (lower.includes('<img')) {
+                setGenerationStatus("Injecting Visual Evidence");
+            } else if (lower.includes('<li>') || lower.includes('<ul>')) {
+                setGenerationStatus("Formulating Step-by-Step Logic");
             } else {
-                setGenerationStatus("Generating content...");
+                setGenerationStatus("Finalizing Documentation");
             }
           },
           appSettings.generationModel
       );
       
       const creationId = crypto.randomUUID();
-      
       let artifactName = isScreenshotAnalysis ? `Analysis: ${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}` : `Article: ${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
       if (files.length === 1 && !isScreenshotAnalysis) {
           artifactName = files[0].name.split('.')[0];
@@ -283,165 +271,78 @@ const App: React.FC = () => {
       const aiMsg: Message = {
           id: crypto.randomUUID(),
           role: 'model',
-          content: isScreenshotAnalysis
-              ? "Analysis complete. I've created a context report for your screenshots." 
-              : "KB Article generated based on your sources and context.",
+          content: isScreenshotAnalysis ? "Analysis complete." : "KB Article generated.",
           timestamp: new Date(),
           artifact: newCreation
       };
 
-      updateActiveProject(p => {
-          let newName = p.name;
-          if ((p.name === 'Untitled Project' || p.name === 'New Session') && activeProject.messages.length === 0) {
-              newName = artifactName;
-          }
-          
-          return {
-              ...p,
-              messages: [...p.messages, aiMsg],
-              activeCreation: newCreation,
-              name: newName
-          };
-      });
+      updateActiveProject(p => ({
+          ...p,
+          messages: [...p.messages, aiMsg],
+          activeCreation: newCreation,
+          name: (p.name === 'Untitled Project' || p.name === 'New Session') ? artifactName : p.name
+      }));
 
     } catch (error) {
       console.error("Failed to generate:", error);
-      const errorMsg: Message = {
-          id: crypto.randomUUID(),
-          role: 'model',
-          content: "Sorry, I encountered an error. Please check your inputs or API key and try again.",
-          timestamp: new Date()
-      };
       updateActiveProject(p => ({
           ...p,
-          messages: [...p.messages, errorMsg]
+          messages: [...p.messages, {
+              id: crypto.randomUUID(),
+              role: 'model',
+              content: "Error during generation. Check API key.",
+              timestamp: new Date()
+          }]
       }));
     } finally {
       setIsGenerating(false);
       setGenerationStatus("");
+      setStreamSize(0);
     }
   };
 
   const handleUpdateArtifact = (id: string, newHtml: string) => {
       updateActiveProject(p => {
-        const updatedMessages = p.messages.map(msg => {
-             if (msg.artifact && msg.artifact.id === id) {
-                 return { ...msg, artifact: { ...msg.artifact, html: newHtml } };
-             }
-             return msg;
-        });
-        
-        let updatedActiveCreation = p.activeCreation;
-        if (updatedActiveCreation && updatedActiveCreation.id === id) {
-            updatedActiveCreation = { ...updatedActiveCreation, html: newHtml };
-        }
-        
-        return {
-            ...p,
-            messages: updatedMessages,
-            activeCreation: updatedActiveCreation
-        };
+        const updatedMessages = p.messages.map(msg => msg.artifact?.id === id ? { ...msg, artifact: { ...msg.artifact, html: newHtml } } : msg);
+        let updatedActiveCreation = p.activeCreation?.id === id ? { ...p.activeCreation, html: newHtml } : p.activeCreation;
+        return { ...p, messages: updatedMessages, activeCreation: updatedActiveCreation };
       });
-  };
-
-  const startLiveSession = () => {
-      setIsLiveConnected(true);
-      setIsLivePanelOpen(true);
   };
 
   return (
     <div className="flex h-[100dvh] bg-[#09090b] text-zinc-50 overflow-hidden font-sans relative">
-        <SettingsModal 
-            isOpen={showSettings} 
-            onClose={() => setShowSettings(false)}
-            settings={appSettings}
-            onUpdateSettings={setAppSettings}
-        />
-
-        <HelpModal 
-            isOpen={showHelp}
-            onClose={() => setShowHelp(false)}
-        />
-
-        <Sidebar 
-            projects={projects}
-            activeProjectId={activeProjectId}
-            onSelectProject={setActiveProjectId}
-            onNewProject={handleNewProject}
-            onDeleteProject={handleDeleteProject}
-            onOpenSettings={() => setShowSettings(true)}
-            onOpenHelp={() => setShowHelp(true)}
-            artifacts={currentArtifacts}
-            onSelectArtifact={(art) => updateActiveProject(p => ({ ...p, activeCreation: art }))}
-            activeArtifactId={activeProject.activeCreation?.id}
-        />
+        <SettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} settings={appSettings} onUpdateSettings={setAppSettings} />
+        <HelpModal isOpen={showHelp} onClose={() => setShowHelp(false)} />
+        <Sidebar projects={projects} activeProjectId={activeProjectId} onSelectProject={setActiveProjectId} onNewProject={handleNewProject} onDeleteProject={handleDeleteProject} onOpenSettings={() => setShowSettings(true)} onOpenHelp={() => setShowHelp(true)} artifacts={currentArtifacts} onSelectArtifact={(art) => updateActiveProject(p => ({ ...p, activeCreation: art }))} activeArtifactId={activeProject.activeCreation?.id} />
 
         <div className="w-full md:w-[450px] lg:w-[35%] h-full flex-shrink-0 z-10 flex flex-col bg-[#0E0E10] border-r border-zinc-800 shadow-2xl">
             {activeProject.messages.length === 0 ? (
                 <div className="flex-1 flex items-center justify-center p-4">
-                    <InputArea 
-                        onGenerate={(prompt, files, template) => handleSendMessage(prompt, files, 'source', template)} 
-                        isGenerating={isGenerating}
-                        onStartLive={appSettings.enableLiveApi ? startLiveSession : undefined}
-                    />
+                    <InputArea onGenerate={(prompt, files, template) => handleSendMessage(prompt, files, 'source', template)} isGenerating={isGenerating} onStartLive={appSettings.enableLiveApi ? () => { setIsLiveConnected(true); setIsLivePanelOpen(true); } : undefined} />
                 </div>
             ) : (
-                <Chat 
-                    messages={activeProject.messages} 
-                    onSendMessage={(text, files, type) => handleSendMessage(text, files, type)} 
-                    isGenerating={isGenerating} 
-                    onSelectArtifact={(creation) => updateActiveProject(p => ({ ...p, activeCreation: creation }))}
-                    activeArtifactId={activeProject.activeCreation?.id}
-                />
+                <Chat messages={activeProject.messages} onSendMessage={(text, files, type) => handleSendMessage(text, files, type)} isGenerating={isGenerating} onSelectArtifact={(creation) => updateActiveProject(p => ({ ...p, activeCreation: creation }))} activeArtifactId={activeProject.activeCreation?.id} />
             )}
         </div>
 
         <div className="hidden md:flex flex-1 flex-col h-full bg-[#121214] relative overflow-hidden">
             <div className="absolute inset-0 bg-dot-grid opacity-20 pointer-events-none"></div>
-            
             <div className="flex-1 flex flex-col relative w-full h-full">
                 <div className={`w-full transition-all duration-500 ease-in-out relative ${isLiveConnected && isLivePanelOpen ? 'h-1/2' : 'h-full'}`}>
                     <LivePreview 
                         creation={activeProject.activeCreation} 
                         isLoading={isGenerating} 
                         loadingMessage={generationStatus}
-                        className="w-full h-full shadow-2xl"
+                        streamSize={streamSize}
                         imageMap={activeProject.imageMap}
-                        onUpdateArtifact={(id, html) => handleUpdateArtifact(id, html)}
+                        onUpdateArtifact={handleUpdateArtifact}
                         isLive={isLiveConnected}
-                        onToggleLive={appSettings.enableLiveApi ? () => {
-                            if (!isLiveConnected) startLiveSession();
-                            else setIsLiveConnected(false);
-                        } : undefined}
+                        onToggleLive={() => setIsLiveConnected(!isLiveConnected)}
                     />
                 </div>
-
                 {isLiveConnected && (
-                    <div className={`
-                        transition-all duration-500 ease-in-out z-50
-                        ${isLivePanelOpen 
-                            ? 'h-1/2 w-full relative border-t border-zinc-800' 
-                            : 'absolute bottom-6 right-6 w-80 h-auto rounded-2xl'
-                        }
-                    `}>
-                        <LivePulse 
-                            isActive={isLiveConnected} 
-                            onClose={() => setIsLiveConnected(false)}
-                            currentHtml={activeProject.activeCreation?.html}
-                            onUpdateHtml={(newHtml) => {
-                                if (activeProject.activeCreation?.id) {
-                                    handleUpdateArtifact(activeProject.activeCreation.id, newHtml);
-                                }
-                            }}
-                            mode={isLivePanelOpen ? 'panel' : 'overlay'} 
-                            onToggleMode={() => setIsLivePanelOpen(!isLivePanelOpen)}
-                            liveConfig={{ 
-                                model: appSettings.liveModel, 
-                                voice: appSettings.liveVoice,
-                                promptMode: appSettings.livePromptMode,
-                                customPrompt: appSettings.customLivePrompt
-                            }}
-                        />
+                    <div className={`transition-all duration-500 ease-in-out z-50 ${isLivePanelOpen ? 'h-1/2 w-full relative border-t border-zinc-800' : 'absolute bottom-6 right-6 w-80 h-auto rounded-2xl'}`}>
+                        <LivePulse isActive={isLiveConnected} onClose={() => setIsLiveConnected(false)} currentHtml={activeProject.activeCreation?.html} onUpdateHtml={(newHtml) => activeProject.activeCreation?.id && handleUpdateArtifact(activeProject.activeCreation.id, newHtml)} mode={isLivePanelOpen ? 'panel' : 'overlay'} onToggleMode={() => setIsLivePanelOpen(!isLivePanelOpen)} liveConfig={{ model: appSettings.liveModel, voice: appSettings.liveVoice, promptMode: appSettings.livePromptMode, customPrompt: appSettings.customLivePrompt }} />
                     </div>
                 )}
             </div>
@@ -449,24 +350,8 @@ const App: React.FC = () => {
 
         {activeProject.activeCreation && (
             <div className="md:hidden fixed inset-0 z-50 bg-[#09090b]">
-                <button 
-                    onClick={() => updateActiveProject(p => ({ ...p, activeCreation: null }))}
-                    className="absolute top-3 left-3 z-50 bg-black/50 text-white px-3 py-1 rounded-full text-xs backdrop-blur-md"
-                >
-                    ← Back to Chat
-                </button>
-                <LivePreview 
-                    creation={activeProject.activeCreation} 
-                    isLoading={isGenerating} 
-                    loadingMessage={generationStatus}
-                    imageMap={activeProject.imageMap}
-                    onUpdateArtifact={(id, html) => handleUpdateArtifact(id, html)}
-                    isLive={isLiveConnected}
-                    onToggleLive={appSettings.enableLiveApi ? () => {
-                         if (!isLiveConnected) startLiveSession();
-                         else setIsLiveConnected(false);
-                    } : undefined}
-                />
+                <button onClick={() => updateActiveProject(p => ({ ...p, activeCreation: null }))} className="absolute top-3 left-3 z-50 bg-black/50 text-white px-3 py-1 rounded-full text-xs backdrop-blur-md">← Back to Chat</button>
+                <LivePreview creation={activeProject.activeCreation} isLoading={isGenerating} loadingMessage={generationStatus} streamSize={streamSize} imageMap={activeProject.imageMap} onUpdateArtifact={handleUpdateArtifact} isLive={isLiveConnected} />
             </div>
         )}
     </div>
