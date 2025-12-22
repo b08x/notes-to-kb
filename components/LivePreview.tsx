@@ -4,7 +4,26 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 import React, { useEffect, useState, useRef, useMemo } from 'react';
-import { ArrowDownTrayIcon, CodeBracketIcon, DocumentTextIcon, PencilIcon, CheckIcon, XMarkIcon, ArrowUturnLeftIcon, ArrowUturnRightIcon, PaintBrushIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon, SparklesIcon, BoltIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
+import { 
+    ArrowDownTrayIcon, 
+    CodeBracketIcon, 
+    DocumentTextIcon, 
+    PencilIcon, 
+    CheckIcon, 
+    XMarkIcon, 
+    ArrowUturnLeftIcon, 
+    ArrowUturnRightIcon, 
+    PaintBrushIcon, 
+    ArrowsPointingOutIcon, 
+    ArrowsPointingInIcon, 
+    SparklesIcon, 
+    BoltIcon, 
+    CheckCircleIcon,
+    CloudArrowUpIcon,
+    ChatBubbleLeftRightIcon,
+    Square3Stack3DIcon,
+    CpuChipIcon
+} from '@heroicons/react/24/outline';
 import { Creation } from './CreationHistory';
 import { DocxGenerator } from '../lib/services/DocxGenerator';
 
@@ -112,37 +131,89 @@ const PdfRenderer = ({ dataUrl }: { dataUrl: string }) => {
   );
 };
 
-const rgbToHex = (rgb: string) => {
-    if (!rgb || rgb === 'transparent' || rgb === 'rgba(0, 0, 0, 0)') return '#ffffff';
-    if (rgb.startsWith('#')) return rgb;
-    const sep = rgb.indexOf(",") > -1 ? "," : " ";
-    const rgbVal = rgb.substr(4).split(")")[0].split(sep);
-    let r = (+rgbVal[0]).toString(16), g = (+rgbVal[1]).toString(16), b = (+rgbVal[2]).toString(16);
-    if (r.length === 1) r = "0" + r;
-    if (g.length === 1) g = "0" + g;
-    if (b.length === 1) b = "0" + b;
-    return "#" + r + g + b;
-};
+const AppOverview = () => (
+    <div className="w-full h-full overflow-y-auto bg-[#09090b] flex flex-col items-center justify-start p-8 md:p-12 animate-in fade-in duration-700">
+        <div className="max-w-4xl w-full space-y-12">
+            
+            {/* Header */}
+            <div className="text-center space-y-4">
+                <div className="inline-flex p-3 bg-blue-600/10 rounded-2xl border border-blue-500/20 mb-2">
+                    <CpuChipIcon className="w-10 h-10 text-blue-400" />
+                </div>
+                <h1 className="text-3xl md:text-5xl font-black text-white tracking-tighter">
+                    Documentation <span className="text-blue-500">Workspace</span>
+                </h1>
+                <p className="text-zinc-400 text-sm md:text-lg font-medium max-w-2xl mx-auto leading-relaxed">
+                    A collaborative environment where AI transforms your raw technical inputs into professional Knowledge Base articles.
+                </p>
+            </div>
 
-interface StyleAction {
-    element: HTMLElement;
-    property: string;
-    oldValue: string;
-    newValue: string;
-}
+            {/* Steps Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                
+                {/* Step 1 */}
+                <div className="group p-6 rounded-2xl bg-zinc-900/50 border border-zinc-800 hover:border-zinc-700 transition-all">
+                    <div className="w-10 h-10 rounded-lg bg-zinc-800 flex items-center justify-center mb-4 text-zinc-400 group-hover:bg-blue-600/20 group-hover:text-blue-400 transition-colors">
+                        <CloudArrowUpIcon className="w-6 h-6" />
+                    </div>
+                    <h3 className="text-lg font-bold text-white mb-2">1. Upload Sources</h3>
+                    <p className="text-sm text-zinc-500 leading-relaxed">
+                        Drag and drop PDF manuals, text notes, or raw technical drafts. Gemini analyzes your documents to build a factual foundation.
+                    </p>
+                </div>
+
+                {/* Step 2 */}
+                <div className="group p-6 rounded-2xl bg-zinc-900/50 border border-zinc-800 hover:border-zinc-700 transition-all">
+                    <div className="w-10 h-10 rounded-lg bg-zinc-800 flex items-center justify-center mb-4 text-zinc-400 group-hover:bg-purple-600/20 group-hover:text-purple-400 transition-colors">
+                        <Square3Stack3DIcon className="w-6 h-6" />
+                    </div>
+                    <h3 className="text-lg font-bold text-white mb-2">2. Analyze Context</h3>
+                    <p className="text-sm text-zinc-500 leading-relaxed">
+                        Use <span className="text-purple-400 font-bold uppercase text-[10px]">Add Context</span> to upload UI screenshots. The AI cross-references visuals with documentation for precise troubleshooting guides.
+                    </p>
+                </div>
+
+                {/* Step 3 */}
+                <div className="group p-6 rounded-2xl bg-zinc-900/50 border border-zinc-800 hover:border-zinc-700 transition-all">
+                    <div className="w-10 h-10 rounded-lg bg-zinc-800 flex items-center justify-center mb-4 text-zinc-400 group-hover:bg-emerald-600/20 group-hover:text-emerald-400 transition-colors">
+                        <ChatBubbleLeftRightIcon className="w-6 h-6" />
+                    </div>
+                    <h3 className="text-lg font-bold text-white mb-2">3. Chat & Refine</h3>
+                    <p className="text-sm text-zinc-500 leading-relaxed">
+                        Iterate using natural language. Ask to simplify steps, add warnings, or change formatting. Use <strong>Live Pulse</strong> for hands-free voice editing.
+                    </p>
+                </div>
+
+                {/* Step 4 */}
+                <div className="group p-6 rounded-2xl bg-zinc-900/50 border border-zinc-800 hover:border-zinc-700 transition-all">
+                    <div className="w-10 h-10 rounded-lg bg-zinc-800 flex items-center justify-center mb-4 text-zinc-400 group-hover:bg-zinc-100 group-hover:text-zinc-900 transition-colors">
+                        <ArrowDownTrayIcon className="w-6 h-6" />
+                    </div>
+                    <h3 className="text-lg font-bold text-white mb-2">4. Professional Export</h3>
+                    <p className="text-sm text-zinc-500 leading-relaxed">
+                        Download your final documentation as a standard-compliant Word (.docx) file, complete with your custom styling and visual assets.
+                    </p>
+                </div>
+
+            </div>
+
+            {/* Footer Prompt */}
+            <div className="flex flex-col items-center gap-4 pt-4 border-t border-zinc-800/50">
+                <div className="flex items-center gap-2 px-4 py-2 bg-zinc-900 rounded-full border border-zinc-800">
+                    <SparklesIcon className="w-4 h-4 text-blue-400" />
+                    <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-widest">Select a document from the sidebar to begin</span>
+                </div>
+            </div>
+
+        </div>
+    </div>
+);
 
 export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, loadingMessage, streamSize = 0, className = "", imageMap = {}, onUpdateArtifact, isLive, onToggleLive }) => {
     const [isExporting, setIsExporting] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
     const [showStyleEditor, setShowStyleEditor] = useState(false);
     const [isFullScreen, setIsFullScreen] = useState(false);
-    const [selectedEl, setSelectedEl] = useState<HTMLElement | null>(null);
-    const [styleValues, setStyleValues] = useState({
-        color: '#000000', backgroundColor: '#ffffff', fontSize: '', padding: '', margin: '', borderRadius: '', maxWidth: '', boxShadow: ''
-    });
-
-    const [styleHistory, setStyleHistory] = useState<StyleAction[]>([]);
-    const [styleRedoStack, setStyleRedoStack] = useState<StyleAction[]>([]);
     const stopGenerationSoundRef = useRef<(() => void) | null>(null);
     const prevIsLoadingRef = useRef(isLoading);
     const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -188,14 +259,6 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
         toggleEdit(); iframe.onload = toggleEdit;
     }, [isEditing, processedHtml, showStyleEditor, isLive]);
 
-    const handleStyleChange = (prop: string, value: string) => {
-        if (!selectedEl) return;
-        const oldValue = (selectedEl.style as any)[prop];
-        (selectedEl.style as any)[prop] = value;
-        setStyleValues(prev => ({ ...prev, [prop]: value }));
-        setStyleHistory(prev => [...prev, { element: selectedEl, property: prop, oldValue: oldValue || '', newValue: value }]);
-    };
-
     const handleSaveEdit = () => {
         if (!iframeRef.current?.contentDocument) return;
         const doc = iframeRef.current.contentDocument;
@@ -221,7 +284,6 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
         finally { setIsExporting(false); }
     };
 
-    // Assistant Progress States
     const phases = [
         { id: 'context', label: 'Analyzing Context', trigger: 'context' },
         { id: 'theme', label: 'Drafting UI Theme', trigger: 'theme' },
@@ -237,7 +299,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
       <div className="h-14 flex items-center justify-between px-4 border-b border-zinc-800 bg-[#121214] shrink-0">
         <div className="flex items-center space-x-2">
             <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
-                {isLoading ? 'Processing Stream' : (isEditing ? 'Draft Edit' : (showStyleEditor ? 'Styling' : 'Artifact View'))}
+                {isLoading ? 'Processing Stream' : (!creation ? 'Welcome' : (isEditing ? 'Draft Edit' : (showStyleEditor ? 'Styling' : 'Artifact View')))}
             </span>
             {creation && <span className="text-[10px] text-zinc-400 bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800 truncate max-w-[150px]">{creation.name}</span>}
         </div>
@@ -262,7 +324,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
         )}
       </div>
 
-      <div className="flex-1 relative bg-white w-full overflow-hidden">
+      <div className="flex-1 relative bg-[#09090b] w-full overflow-hidden">
         {isLoading && (
             <div className="absolute inset-0 z-50 bg-[#09090b]/95 backdrop-blur-md flex items-center justify-center animate-in fade-in duration-500">
                 <div className="max-w-md w-full px-8 py-10 rounded-3xl bg-zinc-900/50 border border-zinc-800 shadow-2xl flex flex-col items-center text-center">
@@ -332,14 +394,16 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
         )}
         
         {processedHtml ? (
-            <iframe ref={iframeRef} title="Preview" srcDoc={processedHtml} className="w-full h-full border-none" sandbox="allow-scripts allow-forms allow-popups allow-modals allow-same-origin" />
+            <iframe ref={iframeRef} title="Preview" srcDoc={processedHtml} className="w-full h-full border-none bg-white" sandbox="allow-scripts allow-forms allow-popups allow-modals allow-same-origin" />
         ) : creation?.originalImage ? (
              creation.originalImage.startsWith('data:application/pdf') ? (
                 <PdfRenderer dataUrl={creation.originalImage} />
              ) : (
                 <div className="w-full h-full bg-zinc-900 flex items-center justify-center p-8"><img src={creation.originalImage} alt="Reference" className="max-w-full max-h-full object-contain opacity-50" /></div>
              )
-        ) : null}
+        ) : (
+            <AppOverview />
+        )}
       </div>
     </div>
   );
