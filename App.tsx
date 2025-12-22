@@ -46,6 +46,8 @@ const App: React.FC = () => {
       enableLiveApi: true,
       liveModel: 'gemini-2.5-flash-native-audio-preview-09-2025',
       liveVoice: 'Fenrir',
+      livePromptMode: 'witty',
+      customLivePrompt: '',
       generationModel: 'gemini-3-pro-preview'
   });
 
@@ -431,7 +433,12 @@ const App: React.FC = () => {
                             }}
                             mode={isLivePanelOpen ? 'panel' : 'overlay'} 
                             onToggleMode={() => setIsLivePanelOpen(!isLivePanelOpen)}
-                            liveConfig={{ model: appSettings.liveModel, voice: appSettings.liveVoice }}
+                            liveConfig={{ 
+                                model: appSettings.liveModel, 
+                                voice: appSettings.liveVoice,
+                                promptMode: appSettings.livePromptMode,
+                                customPrompt: appSettings.customLivePrompt
+                            }}
                         />
                     </div>
                 )}
@@ -473,7 +480,12 @@ const App: React.FC = () => {
                         handleUpdateArtifact(activeProject.activeCreation.id, newHtml);
                     }
                 }} 
-                liveConfig={{ model: appSettings.liveModel, voice: appSettings.liveVoice }}
+                liveConfig={{ 
+                    model: appSettings.liveModel, 
+                    voice: appSettings.liveVoice,
+                    promptMode: appSettings.livePromptMode,
+                    customPrompt: appSettings.customLivePrompt
+                }}
                 mode="overlay"
             />
         </div>

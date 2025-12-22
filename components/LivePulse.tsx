@@ -6,6 +6,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { XMarkIcon, MicrophoneIcon, BoltIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon } from '@heroicons/react/24/solid';
 import { LiveClient } from '../services/live-client';
+import { WITTY_PROMPT, PROFESSIONAL_PROMPT, LivePromptMode } from './SettingsModal';
 
 interface LivePulseProps {
   onClose: () => void;
@@ -14,7 +15,12 @@ interface LivePulseProps {
   onUpdateHtml?: (html: string) => void;
   mode?: 'overlay' | 'panel';
   onToggleMode?: () => void;
-  liveConfig: { model: string; voice: string };
+  liveConfig: { 
+      model: string; 
+      voice: string;
+      promptMode: LivePromptMode;
+      customPrompt?: string;
+  };
 }
 
 export const LivePulse: React.FC<LivePulseProps> = ({ 
@@ -43,6 +49,13 @@ export const LivePulse: React.FC<LivePulseProps> = ({
             try {
                 const apiKey = process.env.API_KEY || '';
                 
+                // Determine actual prompt
+                let prompt = WITTY_PROMPT;
+                if (liveConfig.promptMode === 'professional') prompt = PROFESSIONAL_PROMPT;
+                else if (liveConfig.promptMode === 'custom' && liveConfig.customPrompt) {
+                    prompt = liveConfig.customPrompt;
+                }
+
                 // Initialize Client with Callbacks
                 const client = new LiveClient(
                     apiKey, 
@@ -81,7 +94,11 @@ export const LivePulse: React.FC<LivePulseProps> = ({
                 await client.connect(() => {
                     console.log("Live Client disconnected");
                     onClose();
-                }, liveConfig);
+                }, {
+                    model: liveConfig.model,
+                    voice: liveConfig.voice,
+                    prompt: prompt
+                });
                 
                 setStatus('active');
             } catch (e) {
