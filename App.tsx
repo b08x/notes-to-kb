@@ -205,11 +205,22 @@ const App: React.FC = () => {
       let modifiedText = text;
       const isScreenshotAnalysis = files.length > 0 && fileType === 'screenshot';
       const isSourceUpload = files.length > 0 && fileType === 'source';
+      const isRefinement = activeProject.activeCreation !== null;
       
       if (isScreenshotAnalysis) {
         modifiedText = `[KB CONTEXT ANALYSIS] I am uploading screenshots for context. Please analyze the UI elements, error messages, and visual state shown in these images. Do not generate the full KB article yet. Instead, generate a "Screenshot Analysis Report" in HTML that lists the observed errors, UI state, and potential issues. This will be used as context for the future KB article.\n\nUser Note: ${text}`;
       } else if (isSourceUpload) {
-        modifiedText = `[KB GENERATION] Here are the source documents (notes/PDFs). Please convert them into a ${templateType !== 'auto' ? templateType : 'Standard KB Article'} using the template specifications. Use any previous screenshot analyses in the history as context to enrich the article (e.g., adding specific error codes found in screenshots). If you use a screenshot, reference it by its ID provided in the system prompt.\n\nUser Note: ${text}`;
+        if (isRefinement) {
+            // Refinement with source files: Explicitly context-only.
+            modifiedText = `[REFINEMENT CONTEXT] I am requesting refinements to the existing artifact. I have uploaded additional source documentation to support these edits. 
+            CRITICAL: Use these files as ADDITIONAL CONTEXT for the requested edits only. Do NOT change the main topic of the existing document to match these files unless explicitly asked. 
+            Maintain the existing flow and update the HTML with the new information provided.
+            
+            Refinement Request: ${text}`;
+        } else {
+            // Initial generation
+            modifiedText = `[KB GENERATION] Here are the source documents (notes/PDFs). Please convert them into a ${templateType !== 'auto' ? templateType : 'Standard KB Article'} using the template specifications. Use any previous screenshot analyses in the history as context to enrich the article (e.g., adding specific error codes found in screenshots). If you use a screenshot, reference it by its ID provided in the system prompt.\n\nUser Note: ${text}`;
+        }
       } else if (files.length === 0 && currentHistory.some(m => m.attachments?.some(a => a.category === 'screenshot'))) {
           // No file, but we have screenshots in history, likely a refinement request
           modifiedText = `${text}\n\n[System: Remember to use existing image IDs (e.g. img-...) if you need to insert an image.]`;
@@ -270,7 +281,7 @@ const App: React.FC = () => {
           role: 'model',
           content: isScreenshotAnalysis
               ? "I've analyzed the screenshots and created a context report." 
-              : "I've generated the KB article based on your sources and context.",
+              : "I've updated the KB article based on your refinements and provided context.",
           timestamp: new Date(),
           artifact: newCreation
       };
