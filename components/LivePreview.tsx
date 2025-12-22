@@ -22,7 +22,8 @@ import {
     CloudArrowUpIcon,
     ChatBubbleLeftRightIcon,
     Square3Stack3DIcon,
-    CpuChipIcon
+    CpuChipIcon,
+    DocumentArrowDownIcon
 } from '@heroicons/react/24/outline';
 import { Creation } from './CreationHistory';
 import { DocxGenerator } from '../lib/services/DocxGenerator';
@@ -317,9 +318,33 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
                         <button onClick={() => { setIsEditing(false); setShowStyleEditor(false); }} className="text-[10px] font-bold text-zinc-500 hover:text-white px-2">Cancel</button>
                     </>
                 )}
-                <div className="w-px h-3 bg-zinc-800"></div>
-                <button onClick={handleExportDocx} disabled={isExporting} className="p-1.5 text-zinc-400 hover:text-white transition-colors"><DocumentTextIcon className="w-4 h-4" /></button>
-                <button onClick={() => setIsFullScreen(!isFullScreen)} className="p-1.5 text-zinc-400 hover:text-white transition-colors">{isFullScreen ? <ArrowsPointingInIcon className="w-4 h-4" /> : <ArrowsPointingOutIcon className="w-4 h-4" />}</button>
+                
+                <div className="w-px h-3 bg-zinc-800 mx-1"></div>
+                
+                <div className="flex items-center gap-2">
+                    <button 
+                        onClick={handleExportDocx} 
+                        disabled={isExporting} 
+                        className={`
+                            flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold rounded-md transition-all whitespace-nowrap
+                            ${isExporting 
+                                ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed border border-zinc-700' 
+                                : 'bg-blue-600/10 text-blue-400 border border-blue-500/30 hover:bg-blue-600/20 hover:border-blue-500/50 shadow-sm shadow-blue-900/10'
+                            }
+                        `}
+                    >
+                        <DocumentArrowDownIcon className={`w-3.5 h-3.5 ${isExporting ? 'animate-pulse' : ''}`} />
+                        {isExporting ? 'Exporting...' : 'Export DOCX'}
+                    </button>
+                    
+                    <button 
+                        onClick={() => setIsFullScreen(!isFullScreen)} 
+                        className="p-1.5 text-zinc-500 hover:text-white hover:bg-zinc-800 rounded-md transition-colors"
+                        title="Toggle Fullscreen"
+                    >
+                        {isFullScreen ? <ArrowsPointingInIcon className="w-4 h-4" /> : <ArrowsPointingOutIcon className="w-4 h-4" />}
+                    </button>
+                </div>
             </div>
         )}
       </div>
