@@ -436,63 +436,63 @@ export const Chat: React.FC<ChatProps> = ({
         
         {/* Quick Actions Area */}
         {activeArtifactId && !isGenerating && (
-          <div className="flex gap-2 mb-1 px-1 overflow-x-auto scrollbar-hide items-center min-h-[44px]">
+          <div className="flex flex-wrap justify-center gap-3 mb-1 px-1 items-center min-h-[44px]">
              {!showImprovementMenu ? (
                  <>
                     {/* Add Context - Purple (Order: 1) */}
                     <button
                         onClick={() => setShowAddContextDialog(true)}
-                        className="flex items-center gap-1.5 px-4 py-2 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 text-xs rounded-full border border-purple-500/40 hover:border-purple-400 transition-all whitespace-nowrap font-bold uppercase tracking-tight shadow-lg shadow-purple-900/10"
+                        className="flex items-center gap-2 px-5 py-2.5 bg-purple-600/20 hover:bg-purple-600/30 text-purple-200 text-xs rounded-full border border-purple-500/60 hover:border-purple-400 transition-all whitespace-nowrap font-bold uppercase tracking-tight shadow-[0_0_15px_rgba(168,85,247,0.15)]"
                         title="Add Visual Context: Upload UI screenshots or error messages to help the AI troubleshoot specific layout or functional issues."
                     >
-                        <CameraIcon className="w-3.5 h-3.5" />
+                        <CameraIcon className="w-4 h-4" />
                         <span>Add Context</span>
                     </button>
 
                     {/* Refine Content - Blue (Order: 2) */}
                     <button 
                         onClick={() => setShowRefineDialog(true)}
-                        className="flex items-center gap-1.5 px-4 py-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 text-xs rounded-full border border-blue-500/40 hover:border-blue-400 transition-all whitespace-nowrap font-bold uppercase tracking-tight shadow-lg shadow-blue-900/10"
+                        className="flex items-center gap-2 px-5 py-2.5 bg-blue-600/20 hover:bg-blue-600/30 text-blue-200 text-xs rounded-full border border-blue-500/60 hover:border-blue-400 transition-all whitespace-nowrap font-bold uppercase tracking-tight shadow-[0_0_15px_rgba(59,130,246,0.15)]"
                         title="Update Existing Content: Supply reference PDFs, text notes, or voice instructions to iterate on the document's facts and flow."
                     >
-                        <PencilSquareIcon className="w-3.5 h-3.5" />
+                        <PencilSquareIcon className="w-4 h-4" />
                         <span>Refine Content</span>
                     </button>
 
                     {/* Suggest Improvements - Emerald (Order: 3) */}
                     <button 
                         onClick={() => setShowImprovementMenu(true)}
-                        className="flex items-center gap-1.5 px-4 py-2 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-xs rounded-full border border-emerald-500/40 hover:border-emerald-400 transition-all whitespace-nowrap font-bold uppercase tracking-tight shadow-lg shadow-emerald-900/10"
+                        className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-200 text-xs rounded-full border border-emerald-500/60 hover:border-emerald-400 transition-all whitespace-nowrap font-bold uppercase tracking-tight shadow-[0_0_15px_rgba(16,185,129,0.15)]"
                         title="Get Smart Suggestions: Let the AI review your document structure for formatting, clarity, and missing logical steps."
                     >
-                        <SparklesIcon className="w-3.5 h-3.5" />
+                        <SparklesIcon className="w-4 h-4" />
                         <span>Suggest Improvements</span>
                     </button>
                  </>
              ) : (
-                <div className="flex items-center gap-2 animate-in slide-in-from-left-2 duration-200 w-full">
-                    <button onClick={() => setShowImprovementMenu(false)} className="p-1.5 text-zinc-500 hover:text-white hover:bg-zinc-800 rounded-full transition-colors shrink-0">
-                        <XMarkIcon className="w-4 h-4" />
+                <div className="flex flex-wrap justify-center items-center gap-3 animate-in slide-in-from-left-2 duration-200 w-full">
+                    <button onClick={() => setShowImprovementMenu(false)} className="p-2 text-zinc-500 hover:text-white hover:bg-zinc-800 rounded-full transition-colors shrink-0">
+                        <XMarkIcon className="w-5 h-5" />
                     </button>
                     <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider hidden sm:inline shrink-0">Improve:</span>
                     
                     <button 
                        onClick={() => { handleSuggestion("Review the article structure and strictly enforce standard KB formatting rules (Headers, Spacing, Image placement). Regenerate the FULL HTML."); setShowImprovementMenu(false); }}
-                       className="px-4 py-2 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 text-[10px] font-bold uppercase tracking-tight rounded-full border border-emerald-500/40 whitespace-nowrap transition-colors shadow-sm"
+                       className="px-5 py-2.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-100 text-[10px] font-bold uppercase tracking-tight rounded-full border border-emerald-500/60 whitespace-nowrap transition-colors shadow-[0_0_10px_rgba(16,185,129,0.1)]"
                        title="Normalize Structure: Enforce standard technical documentation hierarchy and styling."
                     >
                        Fix Format
                     </button>
                     <button 
                        onClick={() => { handleSuggestion("Analyze the content for clarity and rewrite ambiguous sections to be concise, direct, and professional. Regenerate the FULL HTML."); setShowImprovementMenu(false); }}
-                       className="px-4 py-2 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 text-[10px] font-bold uppercase tracking-tight rounded-full border border-emerald-500/40 whitespace-nowrap transition-colors shadow-sm"
+                       className="px-5 py-2.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-100 text-[10px] font-bold uppercase tracking-tight rounded-full border border-emerald-500/60 whitespace-nowrap transition-colors shadow-[0_0_10px_rgba(16,185,129,0.1)]"
                        title="Polished Writing: Enhance readability and professional tone throughout the document."
                     >
                        Enhance Clarity
                     </button>
                      <button 
                        onClick={() => { handleSuggestion("Audit the article for potential missing steps, prerequisites, safety warnings, or logic gaps. Regenerate the FULL HTML."); setShowImprovementMenu(false); }}
-                       className="px-4 py-2 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 text-[10px] font-bold uppercase tracking-tight rounded-full border border-emerald-500/40 whitespace-nowrap transition-colors shadow-sm"
+                       className="px-5 py-2.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-100 text-[10px] font-bold uppercase tracking-tight rounded-full border border-emerald-500/60 whitespace-nowrap transition-colors shadow-[0_0_10px_rgba(16,185,129,0.1)]"
                        title="Quality Audit: Identify and fill missing safety warnings or technical prerequisites."
                     >
                        Find Gaps
