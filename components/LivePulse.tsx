@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 import React, { useEffect, useRef, useState } from 'react';
-import { XMarkIcon, MicrophoneIcon, BoltIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon, ArrowPathIcon, ExclamationTriangleIcon } from '@heroicons/react/24/solid';
+import { XMarkIcon, MicrophoneIcon, BoltIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon, ArrowPathIcon, ExclamationTriangleIcon, KeyIcon } from '@heroicons/react/24/solid';
 import { LiveClient } from '../services/live-client';
 import { WITTY_PROMPT, PROFESSIONAL_PROMPT, LivePromptMode } from './SettingsModal';
 
@@ -23,6 +23,9 @@ interface LivePulseProps {
   };
 }
 
+// Fix: Removed declare global for Window as it conflicted with existing environment types.
+// We use (window as any).aistudio to safely access the API.
+
 export const LivePulse: React.FC<LivePulseProps> = ({ 
     onClose, 
     isActive, 
@@ -33,13 +36,12 @@ export const LivePulse: React.FC<LivePulseProps> = ({
     liveConfig 
 }) => {
   const [volume, setVolume] = useState(0);
-  const [status, setStatus] = useState<'connecting' | 'active' | 'error'>('connecting');
+  const [status, setStatus] = useState<'connecting' | 'active' | 'error' | 'key_required'>('connecting');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [transcription, setTranscription] = useState<{user: string, model: string}>({ user: '', model: '' });
   const clientRef = useRef<LiveClient | null>(null);
   const retryCountRef = useRef(0);
 
-  // Store callbacks in refs to prevent useEffect re-triggering
   const callbacksRef = useRef({ onUpdateHtml });
   useEffect(() => {
     callbacksRef.current = { onUpdateHtml };
@@ -52,31 +54,30 @@ export const LivePulse: React.FC<LivePulseProps> = ({
     setErrorMessage(null);
 
     try {
-        const apiKey = process.env.API_KEY || '';
-        if (!apiKey) {
-            throw new Error("API Key missing. Please check your environment.");
+        // High-tier model key selection check
+        // Fix: Use type assertion for aistudio access to satisfy TypeScript constraints
+        const aiStudio = (window as any).aistudio;
+        if (aiStudio) {
+            const hasKey = await aiStudio.hasSelectedApiKey();
+            if (!hasKey) {
+                setStatus('key_required');
+                return;
+            }
         }
-        
-        // Determine actual prompt
+
         let prompt = WITTY_PROMPT;
         if (liveConfig.promptMode === 'professional') prompt = PROFESSIONAL_PROMPT;
         else if (liveConfig.promptMode === 'custom' && liveConfig.customPrompt) {
             prompt = liveConfig.customPrompt;
         }
 
-        // Initialize Client with Callbacks
         const client = new LiveClient(
-            apiKey, 
             currentHtml || "", 
             {
                 onToolCall: (newHtml) => {
-                    if (callbacksRef.current.onUpdateHtml) {
-                        callbacksRef.current.onUpdateHtml(newHtml);
-                    }
+                    if (callbacksRef.current.onUpdateHtml) callbacksRef.current.onUpdateHtml(newHtml);
                 },
-                onVolume: (vol) => {
-                     setVolume(prev => prev * 0.8 + vol * 0.2);
-                },
+                onVolume: (vol) => setVolume(prev => prev * 0.8 + vol * 0.2),
                 onTranscription: (text, source) => {
                     setTranscription(prev => {
                         if (source === 'user') {
@@ -87,6 +88,14 @@ export const LivePulse: React.FC<LivePulseProps> = ({
                             return { user: '', model: prev.model + text };
                         }
                     });
+                },
+                onError: (err) => {
+                    if (err.message.toLowerCase().includes("not found") || err.message.toLowerCase().includes("permission")) {
+                        setStatus('key_required');
+                    } else {
+                        setErrorMessage(err.message);
+                        setStatus('error');
+                    }
                 }
             }
         );
@@ -94,9 +103,10 @@ export const LivePulse: React.FC<LivePulseProps> = ({
         clientRef.current = client;
 
         await client.connect(() => {
-            console.log("Live Client disconnected");
-            setStatus('error');
-            setErrorMessage("Session ended unexpectedly.");
+            if (status !== 'error' && status !== 'key_required') {
+                setStatus('error');
+                setErrorMessage("Session ended unexpectedly.");
+            }
         }, {
             model: liveConfig.model,
             voice: liveConfig.voice,
@@ -107,9 +117,23 @@ export const LivePulse: React.FC<LivePulseProps> = ({
         retryCountRef.current = 0;
     } catch (e: any) {
         console.error("Failed to start live session", e);
-        setStatus('error');
-        setErrorMessage(e.message || "Failed to establish secure connection.");
+        if (e.message?.toLowerCase().includes("not found") || e.message?.toLowerCase().includes("permission")) {
+            setStatus('key_required');
+        } else {
+            setStatus('error');
+            setErrorMessage(e.message || "Failed to establish secure connection.");
+        }
     }
+  };
+
+  const handleOpenKeySelector = async () => {
+      // Fix: Use type assertion for aistudio access to satisfy TypeScript constraints
+      const aiStudio = (window as any).aistudio;
+      if (aiStudio) {
+          await aiStudio.openSelectKey();
+          // Assume success after trigger as per instructions
+          initSession();
+      }
   };
 
   useEffect(() => {
@@ -138,12 +162,12 @@ export const LivePulse: React.FC<LivePulseProps> = ({
 
   const isPanel = mode === 'panel';
 
-  // Informative status descriptions
   const getStatusText = () => {
       switch (status) {
           case 'connecting': return 'Securing Handshake...';
           case 'active': return 'Live Assistant Ready';
           case 'error': return 'Connection Interrupted';
+          case 'key_required': return 'API Key Selection Required';
           default: return '';
       }
   };
@@ -153,173 +177,122 @@ export const LivePulse: React.FC<LivePulseProps> = ({
         relative w-full h-full flex flex-col overflow-hidden transition-all duration-300
         ${isPanel ? 'bg-[#09090b]' : 'bg-[#121214]/95 backdrop-blur-md rounded-2xl border border-zinc-700/50 shadow-2xl'}
     `}>
-        {/* Panel Background Effects */}
         {isPanel && (
              <div className="absolute inset-0 overflow-hidden pointer-events-none">
-                <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 rounded-full blur-3xl transition-colors duration-1000 ${status === 'active' ? 'bg-blue-500/10' : (status === 'error' ? 'bg-red-500/5' : 'bg-yellow-500/5')} opacity-50 animate-pulse`}></div>
+                <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 rounded-full blur-3xl transition-colors duration-1000 ${status === 'active' ? 'bg-blue-500/10' : (status === 'error' || status === 'key_required' ? 'bg-red-500/5' : 'bg-yellow-500/5')} opacity-50 animate-pulse`}></div>
             </div>
         )}
 
-        {/* Header / Controls */}
         <div className={`flex items-center justify-between z-20 ${isPanel ? 'absolute top-6 left-6 right-6' : 'p-3 border-b border-white/5'}`}>
              <div className="flex items-center gap-3">
                  <div className="relative">
                     <div className={`w-2.5 h-2.5 rounded-full transition-all duration-500 ${
                         status === 'active' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]' : 
-                        (status === 'error' ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]' : 'bg-amber-400 animate-ping shadow-[0_0_8px_rgba(251,191,36,0.8)]')
+                        (status === 'error' || status === 'key_required' ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]' : 'bg-amber-400 animate-ping shadow-[0_0_8px_rgba(251,191,36,0.8)]')
                     }`}></div>
                     {status === 'active' && <div className="absolute inset-0 w-2.5 h-2.5 bg-emerald-400 rounded-full animate-ping opacity-20"></div>}
                  </div>
                  
                  <div className="flex flex-col">
                     <span className={`text-[10px] font-mono uppercase tracking-widest ${
-                        status === 'active' ? 'text-emerald-400' : (status === 'error' ? 'text-red-400' : 'text-amber-400')
+                        status === 'active' ? 'text-emerald-400' : (status === 'error' || status === 'key_required' ? 'text-red-400' : 'text-amber-400')
                     }`}>
                         {getStatusText()}
                     </span>
-                    {isPanel && status === 'error' && (
-                        <span className="text-[9px] text-zinc-500 font-mono mt-0.5 max-w-[200px] truncate">{errorMessage}</span>
-                    )}
                  </div>
              </div>
 
              <div className="flex items-center gap-2">
-                 {status === 'error' && (
+                 {(status === 'error' || status === 'key_required') && (
                      <button
-                        onClick={handleRetry}
+                        onClick={status === 'key_required' ? handleOpenKeySelector : handleRetry}
                         className="flex items-center gap-1.5 px-2 py-1 text-[10px] font-bold text-zinc-300 hover:text-white bg-zinc-800 rounded-md border border-zinc-700 hover:border-zinc-500 transition-all"
                      >
-                         <ArrowPathIcon className="w-3 h-3" />
-                         Retry
+                         {status === 'key_required' ? <KeyIcon className="w-3 h-3" /> : <ArrowPathIcon className="w-3 h-3" />}
+                         {status === 'key_required' ? 'Select API Key' : 'Retry'}
                      </button>
                  )}
                  {onToggleMode && (
                      <button
                         onClick={onToggleMode}
                         className="p-1.5 text-zinc-500 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
-                        title={isPanel ? "Minimize" : "Expand"}
                      >
                          {isPanel ? <ArrowsPointingInIcon className="w-5 h-5" /> : <ArrowsPointingOutIcon className="w-4 h-4" />}
                      </button>
                  )}
-                <button 
-                    onClick={onClose}
-                    className="p-1.5 text-zinc-500 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
-                    title="End Session"
-                >
+                <button onClick={onClose} className="p-1.5 text-zinc-500 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors">
                     <XMarkIcon className={isPanel ? "w-6 h-6" : "w-4 h-4"} />
                 </button>
              </div>
         </div>
 
-        {/* Content Area */}
-        <div className={`flex flex-col items-center justify-center flex-1 z-10 ${isPanel ? 'gap-8 px-8' : 'gap-2 px-4 py-2'}`}>
-            
-            {/* Visualizer */}
-            <div className={`relative flex items-center justify-center transition-all duration-300 ${isPanel ? 'w-full max-w-3xl h-32' : 'w-full h-12'}`}>
+        <div className={`flex flex-col items-center justify-center flex-1 z-10 ${isPanel ? 'px-8' : 'px-4 py-2'}`}>
+            <div className={`relative flex flex-col items-center justify-center transition-all duration-300 w-full ${isPanel ? 'max-w-3xl space-y-8' : 'space-y-2'}`}>
                 {status === 'error' ? (
                     <div className="flex flex-col items-center gap-4 animate-in zoom-in-95 duration-300">
                         <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center border border-red-500/20">
                             <ExclamationTriangleIcon className="w-8 h-8 text-red-500" />
                         </div>
-                        {isPanel && <p className="text-zinc-500 text-sm max-w-xs text-center">We lost contact with the technical assistant. Ensure your API key is valid and you have a stable network.</p>}
+                        <p className="text-zinc-500 text-sm max-w-xs text-center">{errorMessage || "Network error: Connection failed."}</p>
                     </div>
-                ) : isPanel ? (
-                    <>
-                        {/* Left Bar */}
-                        <div className="flex-1 h-1 bg-zinc-800 rounded-full overflow-hidden flex justify-end">
-                            <div 
-                                className="h-full bg-gradient-to-l from-blue-500 to-transparent transition-all duration-75 ease-out"
-                                style={{ width: `${Math.min(100, volume * 400)}%`, opacity: status === 'connecting' ? 0.2 : 1 }}
-                            ></div>
+                ) : status === 'key_required' ? (
+                    <div className="flex flex-col items-center gap-4 animate-in zoom-in-95 duration-300">
+                        <div className="w-16 h-16 rounded-full bg-blue-500/10 flex items-center justify-center border border-blue-500/20">
+                            <KeyIcon className="w-8 h-8 text-blue-500" />
                         </div>
-                        
-                        {/* Center Orb */}
-                        <div className="relative flex-shrink-0 w-24 h-24 flex items-center justify-center mx-4">
-                            <div className={`absolute inset-0 rounded-full border-4 ${status === 'active' ? 'border-blue-500/20 animate-[spin_4s_linear_infinite]' : 'border-amber-500/10'}`}></div>
-                            <div className={`absolute inset-2 rounded-full border-2 ${status === 'active' ? 'border-purple-500/20 animate-[spin_3s_linear_infinite_reverse]' : 'border-amber-500/10'}`}></div>
-                            <div 
-                                className={`w-16 h-16 rounded-full shadow-[0_0_30px_rgba(37,99,235,0.4)] transition-all duration-300 ${
-                                    status === 'active' ? 'bg-gradient-to-br from-blue-600 to-purple-600' : 'bg-zinc-800 grayscale'
-                                }`}
-                                style={{ transform: `scale(${1 + volume})` }}
-                            ></div>
-                            <MicrophoneIcon className={`absolute w-6 h-6 text-white/90 ${status === 'connecting' ? 'animate-pulse' : ''}`} />
+                        <div className="text-center space-y-2">
+                            <p className="text-zinc-200 text-sm font-bold">Paid API Key Required</p>
+                            <p className="text-zinc-500 text-xs max-w-xs leading-relaxed">High-tier native audio models require an API key from a project with billing enabled. Visit <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" className="text-blue-400 hover:underline">ai.google.dev/gemini-api/docs/billing</a> for more info.</p>
+                        </div>
+                    </div>
+                ) : (
+                    <>
+                        {/* Audio Visualization */}
+                        <div className={`flex items-center justify-center gap-1 w-full ${isPanel ? 'h-32' : 'h-10'}`}>
+                            {[...Array(isPanel ? 40 : 15)].map((_, i) => (
+                                <div 
+                                    key={i}
+                                    className="w-1 bg-blue-500 rounded-full transition-all duration-75"
+                                    style={{ 
+                                        height: status === 'connecting' ? '10%' : `${10 + (volume * 100 * (1 + Math.sin(i * 0.5)))}%`,
+                                        opacity: status === 'connecting' ? 0.2 : 0.6 + (volume * 0.4)
+                                    }}
+                                ></div>
+                            ))}
                         </div>
 
-                        {/* Right Bar */}
-                        <div className="flex-1 h-1 bg-zinc-800 rounded-full overflow-hidden">
-                                <div 
-                                className="h-full bg-gradient-to-r from-purple-500 to-transparent transition-all duration-75 ease-out"
-                                style={{ width: `${Math.min(100, volume * 400)}%`, opacity: status === 'connecting' ? 0.2 : 1 }}
-                            ></div>
+                        {/* Transcriptions */}
+                        <div className={`w-full max-w-2xl bg-black/20 rounded-xl p-4 border border-white/5 transition-opacity duration-500 ${isPanel ? 'opacity-100 min-h-[100px]' : 'opacity-80 text-center'}`}>
+                             {transcription.user && (
+                                 <div className="flex gap-3 animate-in slide-in-from-bottom-2 duration-300">
+                                     <div className="w-6 h-6 rounded-full bg-zinc-800 flex-shrink-0 flex items-center justify-center">
+                                         <MicrophoneIcon className="w-3.5 h-3.5 text-zinc-500" />
+                                     </div>
+                                     <p className="text-sm text-zinc-300 font-medium italic leading-relaxed">"{transcription.user}"</p>
+                                 </div>
+                             )}
+                             {transcription.model && (
+                                 <div className="flex gap-3 animate-in slide-in-from-bottom-2 duration-300">
+                                     <div className="w-6 h-6 rounded-full bg-blue-600 flex-shrink-0 flex items-center justify-center">
+                                         <BoltIcon className="w-3.5 h-3.5 text-white" />
+                                     </div>
+                                     <p className="text-sm text-blue-200 font-medium leading-relaxed">{transcription.model}</p>
+                                 </div>
+                             )}
+                             {!transcription.user && !transcription.model && (
+                                 <div className="flex items-center justify-center h-full text-zinc-600 text-xs italic tracking-wide">
+                                     {status === 'active' ? "Speak to the assistant to edit the document..." : "Waiting for connection..."}
+                                 </div>
+                             )}
                         </div>
                     </>
-                ) : (
-                     <div className="flex items-center gap-4 w-full">
-                         <div className="relative w-10 h-10 flex-shrink-0 flex items-center justify-center">
-                            <div className={`
-                                absolute w-8 h-8 rounded-full transition-all duration-100 ease-out
-                                ${status === 'active' ? 'bg-gradient-to-tr from-blue-500 to-purple-500' : 'bg-zinc-700'}
-                            `} 
-                            style={{ transform: `scale(${1 + volume * 1.5})` }}
-                            ></div>
-                            <MicrophoneIcon className={`relative w-4 h-4 text-white z-10 opacity-90 ${status === 'connecting' ? 'animate-pulse' : ''}`} />
-                        </div>
-                        
-                        <div className="flex-1 min-w-0 h-10 flex items-center">
-                            {transcription.model ? (
-                                <p className="text-[11px] text-white font-medium line-clamp-2 leading-tight">
-                                    {transcription.model}
-                                </p>
-                            ) : transcription.user ? (
-                                <p className="text-[11px] text-zinc-400 italic line-clamp-1 leading-tight">
-                                    "{transcription.user}"
-                                </p>
-                            ) : (
-                                <p className="text-[10px] text-zinc-500 truncate">
-                                    {status === 'connecting' ? 'Connecting to assistant...' : 'Listening for input...'}
-                                </p>
-                            )}
-                        </div>
-                     </div>
                 )}
             </div>
-
-            {/* Panel Transcription Display */}
-            {isPanel && status !== 'error' && (
-                <div className="w-full min-h-[120px] flex flex-col items-center justify-center space-y-4 text-center">
-                    {transcription.user && (
-                         <p className="text-zinc-400 text-lg md:text-xl font-medium italic animate-in fade-in slide-in-from-bottom-2">
-                             "{transcription.user}"
-                         </p>
-                    )}
-                    {transcription.model ? (
-                         <p className="text-white text-xl md:text-2xl font-bold leading-relaxed animate-in fade-in slide-in-from-bottom-2 text-balance">
-                             {transcription.model}
-                         </p>
-                    ) : !transcription.user && (
-                        <p className="text-zinc-600 text-sm">
-                            {status === 'connecting' ? 'Establishing secure voice handshake...' : 'Start speaking to the assistant...'}
-                        </p>
-                    )}
-                </div>
-            )}
         </div>
         
-        {/* Panel Footer Decoration */}
-        {isPanel && status === 'active' && (
-            <div className="absolute bottom-0 left-0 right-0 h-24 opacity-20 flex items-end justify-center gap-1 pointer-events-none">
-                 {Array.from({ length: 40 }).map((_, i) => (
-                     <div 
-                        key={i} 
-                        className="w-2 bg-zinc-500 rounded-t-sm transition-all duration-300"
-                        style={{ 
-                            height: `${10 + Math.random() * 40 + (volume * 100 * (i % 2 === 0 ? 1 : 0.5))}%`,
-                            opacity: 0.2 + (volume * 0.5)
-                        }}
-                     ></div>
-                 ))}
+        {!isPanel && (
+            <div className="px-4 py-2 bg-blue-500/5 text-[9px] text-zinc-500 text-center border-t border-white/5 uppercase tracking-tighter">
+                Gemini 2.5 Native Audio Engine
             </div>
         )}
     </div>

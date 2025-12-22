@@ -314,6 +314,16 @@ const App: React.FC = () => {
       });
   };
 
+  const toggleLive = () => {
+    if (isLiveConnected) {
+        setIsLiveConnected(false);
+        setIsLivePanelOpen(false);
+    } else if (appSettings.enableLiveApi) {
+        setIsLiveConnected(true);
+        setIsLivePanelOpen(true);
+    }
+  };
+
   return (
     <div className="flex h-[100dvh] bg-[#09090b] text-zinc-50 overflow-hidden font-sans relative">
         <SettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} settings={appSettings} onUpdateSettings={setAppSettings} />
@@ -323,10 +333,18 @@ const App: React.FC = () => {
         <div className="w-full md:w-[450px] lg:w-[35%] h-full flex-shrink-0 z-10 flex flex-col bg-[#0E0E10] border-r border-zinc-800 shadow-2xl">
             {activeProject.messages.length === 0 ? (
                 <div className="flex-1 flex items-center justify-center p-4">
-                    <InputArea onGenerate={(prompt, files, template) => handleSendMessage(prompt, files, 'source', template)} isGenerating={isGenerating} onStartLive={appSettings.enableLiveApi ? () => { setIsLiveConnected(true); setIsLivePanelOpen(true); } : undefined} />
+                    <InputArea onGenerate={(prompt, files, template) => handleSendMessage(prompt, files, 'source', template)} isGenerating={isGenerating} onStartLive={toggleLive} />
                 </div>
             ) : (
-                <Chat messages={activeProject.messages} onSendMessage={(text, files, type) => handleSendMessage(text, files, type)} isGenerating={isGenerating} onSelectArtifact={(creation) => updateActiveProject(p => ({ ...p, activeCreation: creation }))} activeArtifactId={activeProject.activeCreation?.id} />
+                <Chat 
+                    messages={activeProject.messages} 
+                    onSendMessage={(text, files, type) => handleSendMessage(text, files, type)} 
+                    isGenerating={isGenerating} 
+                    onSelectArtifact={(creation) => updateActiveProject(p => ({ ...p, activeCreation: creation }))} 
+                    activeArtifactId={activeProject.activeCreation?.id}
+                    onStartLive={toggleLive}
+                    isLive={isLiveConnected}
+                />
             )}
         </div>
 
@@ -342,7 +360,7 @@ const App: React.FC = () => {
                         imageMap={activeProject.imageMap}
                         onUpdateArtifact={handleUpdateArtifact}
                         isLive={isLiveConnected}
-                        onToggleLive={() => setIsLiveConnected(!isLiveConnected)}
+                        onToggleLive={toggleLive}
                     />
                 </div>
                 {isLiveConnected && (
@@ -356,7 +374,7 @@ const App: React.FC = () => {
         {activeProject.activeCreation && (
             <div className="md:hidden fixed inset-0 z-50 bg-[#09090b]">
                 <button onClick={() => updateActiveProject(p => ({ ...p, activeCreation: null }))} className="absolute top-3 left-3 z-50 bg-black/50 text-white px-3 py-1 rounded-full text-xs backdrop-blur-md">← Back to Chat</button>
-                <LivePreview creation={activeProject.activeCreation} isLoading={isGenerating} loadingMessage={generationStatus} streamSize={streamSize} imageMap={activeProject.imageMap} onUpdateArtifact={handleUpdateArtifact} isLive={isLiveConnected} />
+                <LivePreview creation={activeProject.activeCreation} isLoading={isGenerating} loadingMessage={generationStatus} streamSize={streamSize} imageMap={activeProject.imageMap} onUpdateArtifact={handleUpdateArtifact} isLive={isLiveConnected} onToggleLive={toggleLive} />
             </div>
         )}
     </div>
