@@ -198,25 +198,13 @@ export class DocxGenerator {
         return this.createImageRunFromSvg(element as SVGSVGElement);
       
       case "div":
-        if (element.classList.contains('warning-box') || element.classList.contains('warning')) {
-           const paragraphs: Paragraph[] = [];
-           const childElements = Array.from(element.children);
-           for (const child of childElements) {
-               const parsed = await this.parseNode(child);
-               if (parsed) {
-                   if (Array.isArray(parsed)) {
-                       parsed.forEach(p => {
-                           if (p instanceof Paragraph) {
-                               p.addChildToStart(new TextRun({ text: "⚠️ ", bold: true }));
-                           }
-                       });
-                       paragraphs.push(...parsed as Paragraph[]);
-                   } else if (parsed instanceof Paragraph) {
-                       paragraphs.push(parsed);
-                   }
-               }
-           }
-           return paragraphs;
+        const classes = Array.from(element.classList);
+        const isCallout = classes.some(c => 
+          ['note', 'warning', 'info', 'alert', 'callout', 'warning-box'].includes(c.toLowerCase())
+        );
+
+        if (isCallout) {
+            return this.parseCallout(element);
         }
 
         // Special check for graphics containers
@@ -225,11 +213,23 @@ export class DocxGenerator {
             if (svg) return this.createImageRunFromSvg(svg);
         }
 
-        if (element.textContent?.trim()) {
-            const children = await Promise.all(Array.from(element.children).map(c => this.parseNode(c)));
-            return children.flat().filter(c => c !== null) as FileChild[];
+        // For generic divs, recurse into elements but also handle direct text nodes
+        const subNodes: FileChild[] = [];
+        for (const childNode of Array.from(element.childNodes)) {
+            if (childNode.nodeType === Node.ELEMENT_NODE) {
+                const parsed = await this.parseNode(childNode as Element);
+                if (parsed) {
+                    if (Array.isArray(parsed)) subNodes.push(...parsed);
+                    else subNodes.push(parsed);
+                }
+            } else if (childNode.nodeType === Node.TEXT_NODE && childNode.textContent?.trim()) {
+                subNodes.push(new Paragraph({
+                    children: [new TextRun({ text: childNode.textContent, font: "Arial", size: 20 })],
+                    style: "Normal"
+                }));
+            }
         }
-        return null;
+        return subNodes.length > 0 ? subNodes : null;
 
       default:
         if (element.textContent?.trim() && element.childNodes.length > 0) {
@@ -237,6 +237,87 @@ export class DocxGenerator {
         }
         return null;
     }
+  }
+
+  private async parseCallout(element: Element): Promise<Table> {
+    const children: FileChild[] = [];
+    
+    // We must handle mixed content: text nodes and elements.
+    // Example: <div class="note"><strong>Note:</strong> some text here</div>
+    const currentInlineRuns: (TextRun | ImageRun)[] = [];
+
+    const flushInlineRuns = () => {
+        if (currentInlineRuns.length > 0) {
+            children.push(new Paragraph({
+                children: [...currentInlineRuns],
+                style: "Normal",
+                spacing: { before: 0, after: 100 }
+            }));
+            currentInlineRuns.length = 0;
+        }
+    };
+
+    for (const node of Array.from(element.childNodes)) {
+        if (node.nodeType === Node.TEXT_NODE) {
+            if (node.textContent?.trim() || node.textContent === " ") {
+                currentInlineRuns.push(new TextRun({
+                    text: node.textContent,
+                    font: "Arial",
+                    size: 20
+                }));
+            }
+        } else if (node.nodeType === Node.ELEMENT_NODE) {
+            const el = node as Element;
+            const tagName = el.tagName.toLowerCase();
+
+            // If it's an inline formatting tag, add it to current runs
+            if (['strong', 'b', 'i', 'em', 'code', 'span', 'a'].includes(tagName)) {
+                currentInlineRuns.push(...this.parseInlineChildren(el));
+            } else {
+                // It's a block element (p, ul, table). Flush existing text first.
+                flushInlineRuns();
+                const parsed = await this.parseNode(el);
+                if (parsed) {
+                    if (Array.isArray(parsed)) children.push(...parsed);
+                    else children.push(parsed);
+                }
+            }
+        }
+    }
+    flushInlineRuns();
+
+    // Determine visual style based on class
+    let borderColor = "3B82F6"; // Default Blue (Note/Info)
+    let bgColor = "F0F7FF"; // Very light blue
+    
+    const lowerClasses = Array.from(element.classList).map(c => c.toLowerCase());
+    if (lowerClasses.includes('warning') || lowerClasses.includes('alert') || lowerClasses.includes('warning-box')) {
+        borderColor = "EF4444"; // Red (Warning/Alert)
+        bgColor = "FEF2F2"; // Very light red
+    }
+
+    return new Table({
+        rows: [
+            new TableRow({
+                children: [
+                    new TableCell({
+                        children: children as any,
+                        shading: { fill: bgColor },
+                        borders: {
+                            left: { style: BorderStyle.SINGLE, size: 30, color: borderColor },
+                            top: { style: BorderStyle.NIL },
+                            right: { style: BorderStyle.NIL },
+                            bottom: { style: BorderStyle.NIL },
+                        },
+                        margins: { top: 200, bottom: 200, left: 300, right: 300 },
+                        verticalAlign: VerticalAlign.CENTER,
+                    }),
+                ],
+            }),
+        ],
+        width: { size: 100, type: WidthType.PERCENTAGE },
+        spacing: { before: 200, after: 200 }
+    });
   }
 
   private parseList(listEl: Element, level: number): Paragraph[] {
@@ -337,8 +418,12 @@ export class DocxGenerator {
             runs.push(new TextRun({ text: el.textContent || "", bold: true, font: "Arial", size: 20 }));
         } else if (tagName === 'code') {
             runs.push(new TextRun({ text: el.textContent || "", font: "Courier New", size: 18, color: "3B82F6", shading: { fill: "F3F4F6" } }));
+        } else if (tagName === 'i' || tagName === 'em') {
+            runs.push(new TextRun({ text: el.textContent || "", italic: true, font: "Arial", size: 20 }));
         } else if (tagName === 'br') {
             runs.push(new TextRun({ text: "", break: 1 }));
+        } else if (tagName === 'img') {
+            // Usually images aren't inside inline contexts for technical docs but handled just in case
         } else {
              runs.push(new TextRun({ text: el.textContent || "", font: "Arial", size: 20 }));
         }
