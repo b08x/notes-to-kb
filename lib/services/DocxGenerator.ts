@@ -194,6 +194,9 @@ export class DocxGenerator {
       case "img":
         return this.createImageRun(element as HTMLImageElement);
       
+      case "svg":
+        return this.createImageRunFromSvg(element as SVGSVGElement);
+      
       case "div":
         if (element.classList.contains('warning-box') || element.classList.contains('warning')) {
            const paragraphs: Paragraph[] = [];
@@ -202,7 +205,6 @@ export class DocxGenerator {
                const parsed = await this.parseNode(child);
                if (parsed) {
                    if (Array.isArray(parsed)) {
-                       // Force style on all children of warning box
                        parsed.forEach(p => {
                            if (p instanceof Paragraph) {
                                p.addChildToStart(new TextRun({ text: "⚠️ ", bold: true }));
@@ -216,6 +218,13 @@ export class DocxGenerator {
            }
            return paragraphs;
         }
+
+        // Special check for graphics containers
+        if (element.classList.contains('ai-diagram') || element.classList.contains('flowchart')) {
+            const svg = element.querySelector('svg');
+            if (svg) return this.createImageRunFromSvg(svg);
+        }
+
         if (element.textContent?.trim()) {
             const children = await Promise.all(Array.from(element.children).map(c => this.parseNode(c)));
             return children.flat().filter(c => c !== null) as FileChild[];
@@ -236,30 +245,24 @@ export class DocxGenerator {
 
     for (const li of Array.from(listEl.children)) {
       if (li.tagName.toLowerCase() === 'li') {
-        // Collect text parts before any nested list
-        const textParts: Element[] = [];
         const nestedLists: Element[] = [];
-        
         li.childNodes.forEach(node => {
             if (node.nodeType === Node.ELEMENT_NODE) {
                 const el = node as Element;
                 if (['ul', 'ol'].includes(el.tagName.toLowerCase())) {
                     nestedLists.push(el);
-                } else {
-                    textParts.push(el);
                 }
             }
         });
 
         items.push(new Paragraph({
-          children: this.parseInlineChildren(li, true), // Filter out nested list elements from inline
+          children: this.parseInlineChildren(li, true),
           bullet: !isOrdered ? { level } : undefined,
           numbering: isOrdered ? { reference: "decimal-numbering", level } : undefined,
           style: "Normal",
           indent: { left: 720 * (level + 1) }
         }));
 
-        // Handle nested
         nestedLists.forEach(nested => {
             items.push(...this.parseList(nested, level + 1));
         });
@@ -336,9 +339,6 @@ export class DocxGenerator {
             runs.push(new TextRun({ text: el.textContent || "", font: "Courier New", size: 18, color: "3B82F6", shading: { fill: "F3F4F6" } }));
         } else if (tagName === 'br') {
             runs.push(new TextRun({ text: "", break: 1 }));
-        } else if (tagName === 'img') {
-            // We can't await inside sync loop easily, but ImageRun can take buffer if we pre-processed.
-            // For inline images, we usually skip or treat as blocks in this parser version.
         } else {
              runs.push(new TextRun({ text: el.textContent || "", font: "Arial", size: 20 }));
         }
@@ -346,6 +346,64 @@ export class DocxGenerator {
     });
 
     return runs;
+  }
+
+  private async createImageRunFromSvg(svgEl: SVGSVGElement): Promise<Paragraph | null> {
+    try {
+        const svgData = new XMLSerializer().serializeToString(svgEl);
+        const svgBase64 = btoa(unescape(encodeURIComponent(svgData)));
+        const dataUrl = `data:image/svg+xml;base64,${svgBase64}`;
+        
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        const img = new Image();
+
+        await new Promise<void>((resolve, reject) => {
+            img.onload = () => {
+                const scale = 2; // Better resolution
+                canvas.width = (img.width || 800) * scale;
+                canvas.height = (img.height || 600) * scale;
+                if (ctx) {
+                    ctx.fillStyle = "white";
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                }
+                resolve();
+            };
+            img.onerror = reject;
+            img.src = dataUrl;
+        });
+
+        const pngBase64 = canvas.toDataURL('image/png').split(',')[1];
+        const binaryString = window.atob(pngBase64);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+        }
+
+        const MAX_WIDTH = 500;
+        let finalWidth = img.width || 400;
+        let finalHeight = img.height || 300;
+        if (finalWidth > MAX_WIDTH) {
+            const ratio = MAX_WIDTH / finalWidth;
+            finalWidth = MAX_WIDTH;
+            finalHeight = finalHeight * ratio;
+        }
+
+        return new Paragraph({
+            children: [
+                new ImageRun({
+                    data: bytes.buffer,
+                    transformation: { width: finalWidth, height: finalHeight }
+                })
+            ],
+            alignment: AlignmentType.CENTER,
+            spacing: { before: 200, after: 200 }
+        });
+    } catch (e) {
+        console.error("Failed to convert SVG to Image for DOCX", e);
+        return new Paragraph({ text: "[Technical Diagram: SVG Conversion Error]" });
+    }
   }
 
   private async createImageRun(img: HTMLImageElement): Promise<Paragraph | null> {
