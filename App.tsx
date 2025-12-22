@@ -3,7 +3,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Creation } from './components/CreationHistory';
 import { bringToLife, ChatMessage, Attachment } from './services/gemini';
 import { Chat, Message } from './components/Chat';
@@ -53,6 +53,19 @@ const App: React.FC = () => {
 
   const activeProject = projects.find(p => p.id === activeProjectId) || projects[0];
 
+  // Derive artifacts from message history for the sidebar
+  const currentArtifacts = useMemo(() => {
+      const arts: Creation[] = [];
+      const seenIds = new Set<string>();
+      activeProject.messages.forEach(m => {
+          if (m.artifact && !seenIds.has(m.artifact.id)) {
+              arts.push(m.artifact);
+              seenIds.add(m.artifact.id);
+          }
+      });
+      return arts.reverse(); // Newest first
+  }, [activeProject.messages]);
+
   const updateActiveProject = (updater: (project: ProjectData) => ProjectData) => {
       setProjects(prev => prev.map(p => p.id === activeProjectId ? { ...updater(p), lastModified: new Date() } : p));
   };
@@ -60,7 +73,7 @@ const App: React.FC = () => {
   const handleNewProject = () => {
       const newProject: ProjectData = {
           id: crypto.randomUUID(),
-          name: 'New Project',
+          name: 'New Session',
           lastModified: new Date(),
           messages: [],
           activeCreation: null,
@@ -78,7 +91,6 @@ const App: React.FC = () => {
       }
   };
 
-  // Helper to convert file to base64
   const fileToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -95,7 +107,6 @@ const App: React.FC = () => {
     });
   };
   
-  // Helper to convert blob URL to base64 (for history)
   const blobUrlToBase64 = async (url: string): Promise<string> => {
       const response = await fetch(url);
       const blob = await response.blob();
@@ -115,7 +126,7 @@ const App: React.FC = () => {
 
   const handleSendMessage = async (text: string, files: File[] = [], fileType: 'source' | 'screenshot' = 'source', templateType: string = 'auto') => {
     setIsGenerating(true);
-    setGenerationStatus("Initializing...");
+    setGenerationStatus("Preparing workspace...");
     
     const messageId = crypto.randomUUID();
     const newUserMsg: Message = {
@@ -130,21 +141,19 @@ const App: React.FC = () => {
         })) : undefined
     };
 
-    // 1. Add User Message immediately
     updateActiveProject(p => ({
         ...p,
         messages: [...p.messages, newUserMsg]
     }));
 
     try {
-      // Prepare attachments for Gemini
       const geminiAttachments: Attachment[] = [];
       const newImageMapEntries: Record<string, string> = {};
 
       for (const file of files) {
           try {
               const base64 = await fileToBase64(file);
-              const id = `img-${crypto.randomUUID().substring(0, 8)}`; // Generate short ID for prompt ref
+              const id = `img-${crypto.randomUUID().substring(0, 8)}`; 
               
               geminiAttachments.push({
                   data: base64,
@@ -152,7 +161,6 @@ const App: React.FC = () => {
                   id: id
               });
 
-              // Add to global image map for the live preview to resolve
               if (file.type.startsWith('image/')) {
                   newImageMapEntries[id] = `data:${file.type};base64,${base64}`;
               }
@@ -161,7 +169,6 @@ const App: React.FC = () => {
           }
       }
 
-      // Update image map in state if we have new images
       if (Object.keys(newImageMapEntries).length > 0) {
           updateActiveProject(p => ({
               ...p,
@@ -169,7 +176,6 @@ const App: React.FC = () => {
           }));
       }
 
-      // 2. Prepare History from CURRENT project state
       const currentHistory = [...activeProject.messages, newUserMsg];
       
       const historyForGemini: ChatMessage[] = await Promise.all(currentHistory.map(async m => {
@@ -181,7 +187,6 @@ const App: React.FC = () => {
                   if (att.type === 'image') {
                       try {
                         const b64 = await blobUrlToBase64(att.url);
-                        // We attempt to guess mime type from fetch or default
                         const mime = 'image/png'; 
                         histImages.push({ data: b64, mimeType: mime });
                       } catch (e) {
@@ -192,7 +197,7 @@ const App: React.FC = () => {
           }
 
           if (m.artifact) {
-              textContent += `\n\n[SYSTEM: The user can see the following generated artifact (HTML). Use this as context for refinements]:\n\`\`\`html\n${m.artifact.html}\n\`\`\``;
+              textContent += `\n\n[SYSTEM ARTIFACT CONTEXT - Name: ${m.artifact.name}]:\n\`\`\`html\n${m.artifact.html}\n\`\`\``;
           }
           return {
               role: m.role,
@@ -208,22 +213,30 @@ const App: React.FC = () => {
       const isRefinement = activeProject.activeCreation !== null;
       
       if (isScreenshotAnalysis) {
-        modifiedText = `[KB CONTEXT ANALYSIS] I am uploading screenshots for context. Please analyze the UI elements, error messages, and visual state shown in these images. Do not generate the full KB article yet. Instead, generate a "Screenshot Analysis Report" in HTML that lists the observed errors, UI state, and potential issues. This will be used as context for the future KB article.\n\nUser Note: ${text}`;
+        modifiedText = `[KB CONTEXT ANALYSIS] I am uploading screenshots for context. Analyze these images for UI elements, errors, and functional states. 
+        CRITICAL: Generate a comprehensive "Screenshot Analysis Report" in HTML. 
+        This report MUST be structured and detailed as it will be used as the primary visual context for the future KB article. 
+        List every Source ID (img-...) found in this analysis request clearly in the HTML so I can map them later.
+        
+        User Instructions: ${text}`;
       } else if (isSourceUpload) {
         if (isRefinement) {
-            // Refinement with source files: Explicitly context-only.
-            modifiedText = `[REFINEMENT CONTEXT] I am requesting refinements to the existing artifact. I have uploaded additional source documentation to support these edits. 
-            CRITICAL: Use these files as ADDITIONAL CONTEXT for the requested edits only. Do NOT change the main topic of the existing document to match these files unless explicitly asked. 
-            Maintain the existing flow and update the HTML with the new information provided.
+            modifiedText = `[REFINEMENT CONTEXT] Refine the existing artifact using the uploaded reference files as context only. 
+            Do NOT switch the main topic. Maintain document integrity. 
+            Update the HTML with the new reference data.
             
             Refinement Request: ${text}`;
         } else {
-            // Initial generation
-            modifiedText = `[KB GENERATION] Here are the source documents (notes/PDFs). Please convert them into a ${templateType !== 'auto' ? templateType : 'Standard KB Article'} using the template specifications. Use any previous screenshot analyses in the history as context to enrich the article (e.g., adding specific error codes found in screenshots). If you use a screenshot, reference it by its ID provided in the system prompt.\n\nUser Note: ${text}`;
+            // Check history for any Analysis Reports
+            const hasAnalysis = currentHistory.some(m => m.artifact?.name.toLowerCase().includes('analysis'));
+            const analysisContext = hasAnalysis ? "\n[System: Use the 'Screenshot Analysis Report' artifacts in the history to enrich this KB with specific visual evidence, error codes, and UI labels.]" : "";
+            
+            modifiedText = `[KB GENERATION] Convert the source documents into a ${templateType !== 'auto' ? templateType : 'Standard KB Article'}. 
+            ${analysisContext} 
+            Use provided image IDs (img-...) if instructed or if you reference specific UI screens analyzed in previous reports.
+            
+            User Note: ${text}`;
         }
-      } else if (files.length === 0 && currentHistory.some(m => m.attachments?.some(a => a.category === 'screenshot'))) {
-          // No file, but we have screenshots in history, likely a refinement request
-          modifiedText = `${text}\n\n[System: Remember to use existing image IDs (e.g. img-...) if you need to insert an image.]`;
       }
 
       const html = await bringToLife(
@@ -234,19 +247,13 @@ const App: React.FC = () => {
           (partialText) => {
             const lower = partialText.toLowerCase();
             if (lower.length < 50) {
-                setGenerationStatus("Analyzing your inputs...");
+                setGenerationStatus("Reading inputs...");
             } else if (lower.includes('<style')) {
-                setGenerationStatus("Designing visual theme...");
-            } else if (lower.includes('<script')) {
-                setGenerationStatus("Coding interactivity...");
-            } else if (lower.includes('<img')) {
-                setGenerationStatus("Embedding assets...");
+                setGenerationStatus("Designing interface...");
             } else if (lower.includes('h2') || lower.includes('h3')) {
-                setGenerationStatus("Structuring content...");
-            } else if (lower.includes('<ul>') || lower.includes('<ol>')) {
-                setGenerationStatus("Drafting procedures...");
+                setGenerationStatus("Building structure...");
             } else if (lower.length > 500) {
-                setGenerationStatus("Refining details...");
+                setGenerationStatus("Refining documentation...");
             } else {
                 setGenerationStatus("Generating content...");
             }
@@ -256,12 +263,9 @@ const App: React.FC = () => {
       
       const creationId = crypto.randomUUID();
       
-      // Determine a name for the artifact
-      let artifactName = `Artifact ${new Date().toLocaleTimeString()}`;
-      if (files.length === 1) {
-          artifactName = isScreenshotAnalysis ? `Analysis: ${files[0].name}` : files[0].name;
-      } else if (files.length > 1) {
-          artifactName = isScreenshotAnalysis ? `Analysis: ${files.length} Files` : `KB from ${files.length} Files`;
+      let artifactName = isScreenshotAnalysis ? `Analysis: ${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}` : `Article: ${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
+      if (files.length === 1 && !isScreenshotAnalysis) {
+          artifactName = files[0].name.split('.')[0];
       }
 
       const primaryImage = geminiAttachments.length > 0 
@@ -280,16 +284,15 @@ const App: React.FC = () => {
           id: crypto.randomUUID(),
           role: 'model',
           content: isScreenshotAnalysis
-              ? "I've analyzed the screenshots and created a context report." 
-              : "I've updated the KB article based on your refinements and provided context.",
+              ? "Analysis complete. I've created a context report for your screenshots." 
+              : "KB Article generated based on your sources and context.",
           timestamp: new Date(),
           artifact: newCreation
       };
 
-      // 3. Update State with AI Message and Active Artifact
       updateActiveProject(p => {
           let newName = p.name;
-          if ((p.name === 'Untitled Project' || p.name === 'New Project') && activeProject.messages.length === 0) {
+          if ((p.name === 'Untitled Project' || p.name === 'New Session') && activeProject.messages.length === 0) {
               newName = artifactName;
           }
           
@@ -306,7 +309,7 @@ const App: React.FC = () => {
       const errorMsg: Message = {
           id: crypto.randomUUID(),
           role: 'model',
-          content: "Sorry, I encountered an error generating the artifact. Please try again.",
+          content: "Sorry, I encountered an error. Please check your inputs or API key and try again.",
           timestamp: new Date()
       };
       updateActiveProject(p => ({
@@ -319,7 +322,6 @@ const App: React.FC = () => {
     }
   };
 
-  // Handle Updates from LivePreview Editor OR LivePulse Tool
   const handleUpdateArtifact = (id: string, newHtml: string) => {
       updateActiveProject(p => {
         const updatedMessages = p.messages.map(msg => {
@@ -344,12 +346,11 @@ const App: React.FC = () => {
 
   const startLiveSession = () => {
       setIsLiveConnected(true);
-      setIsLivePanelOpen(true); // Open panel by default on start
+      setIsLivePanelOpen(true);
   };
 
   return (
     <div className="flex h-[100dvh] bg-[#09090b] text-zinc-50 overflow-hidden font-sans relative">
-        {/* Settings Modal */}
         <SettingsModal 
             isOpen={showSettings} 
             onClose={() => setShowSettings(false)}
@@ -357,13 +358,11 @@ const App: React.FC = () => {
             onUpdateSettings={setAppSettings}
         />
 
-        {/* Help Modal */}
         <HelpModal 
             isOpen={showHelp}
             onClose={() => setShowHelp(false)}
         />
 
-        {/* Sidebar for Sessions */}
         <Sidebar 
             projects={projects}
             activeProjectId={activeProjectId}
@@ -372,12 +371,13 @@ const App: React.FC = () => {
             onDeleteProject={handleDeleteProject}
             onOpenSettings={() => setShowSettings(true)}
             onOpenHelp={() => setShowHelp(true)}
+            artifacts={currentArtifacts}
+            onSelectArtifact={(art) => updateActiveProject(p => ({ ...p, activeCreation: art }))}
+            activeArtifactId={activeProject.activeCreation?.id}
         />
 
-        {/* Left Panel: Chat & Inputs (40% width on desktop) */}
-        <div className="w-full md:w-[450px] lg:w-[35%] h-full flex-shrink-0 z-10 flex flex-col bg-[#0E0E10] border-r border-zinc-800">
+        <div className="w-full md:w-[450px] lg:w-[35%] h-full flex-shrink-0 z-10 flex flex-col bg-[#0E0E10] border-r border-zinc-800 shadow-2xl">
             {activeProject.messages.length === 0 ? (
-                // Show InputArea (Hero) when no messages
                 <div className="flex-1 flex items-center justify-center p-4">
                     <InputArea 
                         onGenerate={(prompt, files, template) => handleSendMessage(prompt, files, 'source', template)} 
@@ -386,7 +386,6 @@ const App: React.FC = () => {
                     />
                 </div>
             ) : (
-                // Show Chat when conversation starts
                 <Chat 
                     messages={activeProject.messages} 
                     onSendMessage={(text, files, type) => handleSendMessage(text, files, type)} 
@@ -397,14 +396,10 @@ const App: React.FC = () => {
             )}
         </div>
 
-        {/* Right Panel: Workspace / Preview (Rest of width) */}
         <div className="hidden md:flex flex-1 flex-col h-full bg-[#121214] relative overflow-hidden">
-            {/* Dot Grid Background */}
             <div className="absolute inset-0 bg-dot-grid opacity-20 pointer-events-none"></div>
             
-            {/* Split View Container Logic */}
             <div className="flex-1 flex flex-col relative w-full h-full">
-                {/* Live Preview - Flexes to fill space or shares space */}
                 <div className={`w-full transition-all duration-500 ease-in-out relative ${isLiveConnected && isLivePanelOpen ? 'h-1/2' : 'h-full'}`}>
                     <LivePreview 
                         creation={activeProject.activeCreation} 
@@ -415,16 +410,12 @@ const App: React.FC = () => {
                         onUpdateArtifact={(id, html) => handleUpdateArtifact(id, html)}
                         isLive={isLiveConnected}
                         onToggleLive={appSettings.enableLiveApi ? () => {
-                            if (!isLiveConnected) {
-                                startLiveSession();
-                            } else {
-                                setIsLiveConnected(false); // Disconnect fully if clicked from header
-                            }
+                            if (!isLiveConnected) startLiveSession();
+                            else setIsLiveConnected(false);
                         } : undefined}
                     />
                 </div>
 
-                {/* Live Pulse Container - Persistent Mounting */}
                 {isLiveConnected && (
                     <div className={`
                         transition-all duration-500 ease-in-out z-50
@@ -456,7 +447,6 @@ const App: React.FC = () => {
             </div>
         </div>
 
-        {/* Mobile Preview Overlay */}
         {activeProject.activeCreation && (
             <div className="md:hidden fixed inset-0 z-50 bg-[#09090b]">
                 <button 
@@ -479,27 +469,6 @@ const App: React.FC = () => {
                 />
             </div>
         )}
-
-        {/* Mobile Live Pulse (Overlay Only) */}
-        <div className="md:hidden">
-            <LivePulse 
-                isActive={isLiveConnected} 
-                onClose={() => setIsLiveConnected(false)}
-                currentHtml={activeProject.activeCreation?.html}
-                onUpdateHtml={(newHtml) => {
-                    if (activeProject.activeCreation?.id) {
-                        handleUpdateArtifact(activeProject.activeCreation.id, newHtml);
-                    }
-                }} 
-                liveConfig={{ 
-                    model: appSettings.liveModel, 
-                    voice: appSettings.liveVoice,
-                    promptMode: appSettings.livePromptMode,
-                    customPrompt: appSettings.customLivePrompt
-                }}
-                mode="overlay"
-            />
-        </div>
     </div>
   );
 };
