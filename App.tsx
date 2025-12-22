@@ -44,12 +44,15 @@ const App: React.FC = () => {
   const [showSettings, setShowSettings] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [appSettings, setAppSettings] = useState<AppSettings>({
+      provider: 'gemini',
       enableLiveApi: true,
       liveModel: 'gemini-2.5-flash-native-audio-preview-09-2025',
       liveVoice: 'Fenrir',
       livePromptMode: 'witty',
       customLivePrompt: '',
-      generationModel: 'gemini-3-pro-preview'
+      generationModel: 'gemini-3-pro-preview',
+      openRouterKey: '',
+      openRouterModel: 'google/gemini-pro-1.5'
   });
 
   const activeProject = projects.find(p => p.id === activeProjectId) || projects[0];
@@ -247,7 +250,9 @@ const App: React.FC = () => {
                 setGenerationStatus("Finalizing Documentation");
             }
           },
-          appSettings.generationModel
+          appSettings.provider === 'gemini' ? appSettings.generationModel : appSettings.openRouterModel,
+          appSettings.provider,
+          appSettings.openRouterKey
       );
       
       const creationId = crypto.randomUUID();
@@ -283,14 +288,14 @@ const App: React.FC = () => {
           name: (p.name === 'Untitled Project' || p.name === 'New Session') ? artifactName : p.name
       }));
 
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to generate:", error);
       updateActiveProject(p => ({
           ...p,
           messages: [...p.messages, {
               id: crypto.randomUUID(),
               role: 'model',
-              content: "Error during generation. Check API key.",
+              content: `Error during generation: ${error.message || "Check API configuration."}`,
               timestamp: new Date()
           }]
       }));

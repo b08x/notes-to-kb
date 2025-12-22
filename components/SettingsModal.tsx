@@ -3,18 +3,22 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  */
-import React from 'react';
-import { XMarkIcon, ChatBubbleBottomCenterTextIcon, AcademicCapIcon, AdjustmentsHorizontalIcon } from '@heroicons/react/24/outline';
+import React, { useState, useEffect } from 'react';
+import { XMarkIcon, ChatBubbleBottomCenterTextIcon, AcademicCapIcon, AdjustmentsHorizontalIcon, ArrowPathIcon, CheckIcon, CpuChipIcon, ShieldCheckIcon } from '@heroicons/react/24/outline';
 
 export type LivePromptMode = 'witty' | 'professional' | 'custom';
+export type Provider = 'gemini' | 'openrouter';
 
 export interface AppSettings {
+    provider: Provider;
     enableLiveApi: boolean;
     liveModel: string;
     liveVoice: string;
     livePromptMode: LivePromptMode;
     customLivePrompt: string;
     generationModel: string;
+    openRouterKey: string;
+    openRouterModel: string;
 }
 
 export const WITTY_PROMPT = `You are a helpful, highly experienced technical assistant for the “Notes to KB” app—yes, helpful, even if you sometimes sound unconvinced that the universe actually needs another Knowledge Base article.
@@ -45,10 +49,58 @@ interface SettingsModalProps {
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings, onUpdateSettings }) => {
+    const [orModels, setOrModels] = useState<{ id: string, name: string }[]>([]);
+    const [isFetchingOr, setIsFetchingOr] = useState(false);
+    const [orError, setOrError] = useState<string | null>(null);
+    const [isValidated, setIsValidated] = useState(false);
+
     if (!isOpen) return null;
 
     const handleChange = (key: keyof AppSettings, value: any) => {
         onUpdateSettings({ ...settings, [key]: value });
+        if (key === 'openRouterKey') setIsValidated(false);
+    };
+
+    const fetchOpenRouterModels = async () => {
+        if (!settings.openRouterKey) {
+            setOrError("API Key is required to fetch models.");
+            return;
+        }
+
+        setIsFetchingOr(true);
+        setOrError(null);
+
+        try {
+            const response = await fetch("https://openrouter.ai/api/v1/models", {
+                headers: {
+                    "Authorization": `Bearer ${settings.openRouterKey}`,
+                    "HTTP-Referer": window.location.origin,
+                    "X-Title": "AI Doc Assistant"
+                }
+            });
+
+            if (!response.ok) {
+                const data = await response.json();
+                throw new Error(data.error?.message || "Failed to fetch models.");
+            }
+
+            const data = await response.json();
+            const models = data.data.map((m: any) => ({
+                id: m.id,
+                name: m.name || m.id
+            })).sort((a: any, b: any) => a.name.localeCompare(b.name));
+
+            setOrModels(models);
+            setIsValidated(true);
+            if (models.length > 0 && !settings.openRouterModel) {
+                handleChange('openRouterModel', models[0].id);
+            }
+        } catch (e: any) {
+            setOrError(e.message);
+            setIsValidated(false);
+        } finally {
+            setIsFetchingOr(false);
+        }
     };
 
     return (
@@ -61,8 +113,117 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, s
                     </button>
                 </div>
                 
-                <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto scrollbar-thin scrollbar-thumb-zinc-700">
-                    {/* Live API Section */}
+                <div className="p-6 space-y-6 max-h-[75vh] overflow-y-auto scrollbar-thin scrollbar-thumb-zinc-700">
+                    
+                    {/* Provider Toggle */}
+                    <section className="space-y-4">
+                        <div className="flex flex-col gap-1">
+                            <h4 className="text-sm font-bold text-zinc-200">AI Provider</h4>
+                            <p className="text-xs text-zinc-500">Choose the backend for artifact generation.</p>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 bg-black/30 p-1 rounded-xl border border-zinc-800">
+                            <button 
+                                onClick={() => handleChange('provider', 'gemini')}
+                                className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${settings.provider === 'gemini' ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-500 hover:text-zinc-300'}`}
+                            >
+                                Gemini (Native)
+                            </button>
+                            <button 
+                                onClick={() => handleChange('provider', 'openrouter')}
+                                className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${settings.provider === 'openrouter' ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-500 hover:text-zinc-300'}`}
+                            >
+                                OpenRouter
+                            </button>
+                        </div>
+                    </section>
+
+                    <hr className="border-zinc-800" />
+
+                    {/* Gemini Specific Settings */}
+                    {settings.provider === 'gemini' && (
+                        <section className="space-y-4 animate-in fade-in duration-300">
+                            <div className="flex flex-col gap-1">
+                                <h4 className="text-sm font-bold text-zinc-200">Gemini Generation</h4>
+                                <p className="text-xs text-zinc-500">Configuration for the native Google Gemini models.</p>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-zinc-400 mb-1.5">Primary Model</label>
+                                <select 
+                                    value={settings.generationModel}
+                                    onChange={(e) => handleChange('generationModel', e.target.value)}
+                                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+                                >
+                                    <option value="gemini-3-pro-preview">Gemini 3 Pro (Preview)</option>
+                                    <option value="gemini-3-flash-preview">Gemini 3 Flash (Preview)</option>
+                                    <option value="gemini-flash-lite-latest">Gemini Flash Lite</option>
+                                    <option value="gemini-flash-latest">Gemini Flash</option>
+                                </select>
+                            </div>
+                        </section>
+                    )}
+
+                    {/* OpenRouter Specific Settings */}
+                    {settings.provider === 'openrouter' && (
+                        <section className="space-y-4 animate-in fade-in duration-300">
+                            <div className="flex flex-col gap-1">
+                                <h4 className="text-sm font-bold text-zinc-200">OpenRouter Configuration</h4>
+                                <p className="text-xs text-zinc-500">Access thousands of models via OpenRouter's proxy.</p>
+                            </div>
+                            
+                            <div className="space-y-3">
+                                <div>
+                                    <label className="block text-xs font-medium text-zinc-400 mb-1.5">OpenRouter API Key</label>
+                                    <div className="relative">
+                                        <input 
+                                            type="password"
+                                            value={settings.openRouterKey}
+                                            onChange={(e) => handleChange('openRouterKey', e.target.value)}
+                                            placeholder="sk-or-v1-..."
+                                            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg pl-3 pr-10 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+                                        />
+                                        {isValidated && (
+                                            <div className="absolute right-3 top-1/2 -translate-y-1/2 text-emerald-500">
+                                                <ShieldCheckIcon className="w-4 h-4" />
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <div className="flex items-center justify-between mb-1.5">
+                                        <label className="text-xs font-medium text-zinc-400">Selected Model</label>
+                                        <button 
+                                            onClick={fetchOpenRouterModels}
+                                            disabled={isFetchingOr || !settings.openRouterKey}
+                                            className="text-[10px] font-bold text-blue-400 hover:text-blue-300 disabled:text-zinc-600 flex items-center gap-1 uppercase tracking-tighter"
+                                        >
+                                            {isFetchingOr ? <ArrowPathIcon className="w-3 h-3 animate-spin" /> : <ArrowPathIcon className="w-3 h-3" />}
+                                            {isValidated ? 'Refresh Models' : 'Validate & Fetch Models'}
+                                        </button>
+                                    </div>
+                                    <select 
+                                        value={settings.openRouterModel}
+                                        onChange={(e) => handleChange('openRouterModel', e.target.value)}
+                                        className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 max-h-40"
+                                    >
+                                        {orModels.length > 0 ? (
+                                            orModels.map(m => (
+                                                <option key={m.id} value={m.id}>{m.name}</option>
+                                            ))
+                                        ) : (
+                                            <option value={settings.openRouterModel || 'google/gemini-pro-1.5'}>{settings.openRouterModel || 'google/gemini-pro-1.5'}</option>
+                                        )}
+                                    </select>
+                                    {orError && <p className="mt-1 text-[10px] text-red-500 font-medium">{orError}</p>}
+                                    {isValidated && orModels.length > 0 && <p className="mt-1 text-[10px] text-emerald-500 font-medium flex items-center gap-1"><CheckIcon className="w-3 h-3" /> API Key Validated</p>}
+                                </div>
+                            </div>
+                        </section>
+                    )}
+
+                    <hr className="border-zinc-800" />
+
+                    {/* Live API Section (Native Only) */}
                     <section className="space-y-4">
                         <div className="flex items-center justify-between">
                             <div>
@@ -109,7 +270,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, s
                                     </div>
                                 </div>
 
-                                {/* Prompt Personality Selector */}
                                 <div className="pt-2">
                                     <label className="block text-xs font-medium text-zinc-400 mb-2">Assistant Personality</label>
                                     <div className="grid grid-cols-3 gap-2">
@@ -150,28 +310,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, s
                                 )}
                             </div>
                         )}
-                    </section>
-
-                    <hr className="border-zinc-800" />
-
-                    {/* Generation Settings */}
-                    <section className="space-y-4">
-                         <div>
-                            <h4 className="text-sm font-bold text-zinc-200">Content Generation</h4>
-                            <p className="text-xs text-zinc-500">Select the model used for creating artifacts and KB articles.</p>
-                        </div>
-                        <div>
-                            <label className="block text-xs font-medium text-zinc-400 mb-1">Primary Model</label>
-                             <select 
-                                value={settings.generationModel}
-                                onChange={(e) => handleChange('generationModel', e.target.value)}
-                                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
-                            >
-                                <option value="gemini-3-pro-preview">Gemini 3.0 Pro (Preview) - Best Reasoning</option>
-                                <option value="gemini-2.5-flash">Gemini 2.5 Flash - Fast & Efficient</option>
-                                <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash-Lite - Cost Effective</option>
-                            </select>
-                        </div>
                     </section>
                 </div>
             </div>
