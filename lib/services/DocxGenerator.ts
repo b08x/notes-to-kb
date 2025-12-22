@@ -13,6 +13,13 @@ import {
   ImageRun,
   AlignmentType,
   FileChild,
+  Table,
+  TableRow,
+  TableCell,
+  WidthType,
+  BorderStyle,
+  VerticalAlign,
+  TableLayoutType,
 } from "docx";
 
 export class DocxGenerator {
@@ -28,12 +35,12 @@ export class DocxGenerator {
 
     // Traverse top-level elements
     for (const node of Array.from(body.children)) {
-      const parsedNode = await this.parseNode(node);
-      if (parsedNode) {
-        if (Array.isArray(parsedNode)) {
-          children.push(...parsedNode);
+      const parsedNodes = await this.parseNode(node);
+      if (parsedNodes) {
+        if (Array.isArray(parsedNodes)) {
+          children.push(...parsedNodes);
         } else {
-          children.push(parsedNode);
+          children.push(parsedNodes);
         }
       }
     }
@@ -54,13 +61,13 @@ export class DocxGenerator {
               color: "000000",
             },
             paragraph: {
-              spacing: { after: 240 }, // 12pt
+              spacing: { after: 300 }, 
               alignment: AlignmentType.LEFT,
             },
           },
           {
             id: "Heading1",
-            name: "Heading 1", // Maps to HTML H2 (Major Phase)
+            name: "Heading 1", // Major Phase (H2)
             basedOn: "Normal",
             next: "Normal",
             quickFormat: true,
@@ -71,12 +78,15 @@ export class DocxGenerator {
               color: "000000",
             },
             paragraph: {
-              spacing: { before: 240, after: 120 }, // 12pt before, 6pt after
+              spacing: { before: 400, after: 200 },
+              border: {
+                bottom: { color: "E5E7EB", space: 1, style: BorderStyle.SINGLE, size: 6 },
+              },
             },
           },
           {
             id: "Heading2",
-            name: "Heading 2", // Maps to HTML H3 (Step Header)
+            name: "Heading 2", // Step Header (H3)
             basedOn: "Normal",
             next: "Normal",
             quickFormat: true,
@@ -87,12 +97,12 @@ export class DocxGenerator {
               color: "000000",
             },
             paragraph: {
-              spacing: { before: 240, after: 120 }, // 12pt before
+              spacing: { before: 300, after: 150 },
             },
           },
           {
             id: "Heading3", 
-            name: "Heading 3", // Maps to HTML H4 (Task Header)
+            name: "Heading 3", // Task Header (H4)
             basedOn: "Normal",
             next: "Normal",
             quickFormat: true,
@@ -100,10 +110,10 @@ export class DocxGenerator {
                font: "Arial",
                size: 24, // 12pt
                bold: true,
-               color: "000000"
+               color: "374151"
             },
             paragraph: {
-                spacing: { before: 240, after: 120 } // 12pt before
+                spacing: { before: 200, after: 100 }
             }
           },
           {
@@ -112,11 +122,11 @@ export class DocxGenerator {
             quickFormat: true,
             run: {
               font: "Arial",
-              size: 22, // 11pt
-              color: "000000",
+              size: 20, // 10pt (Standard for professional docs)
+              color: "1F2937",
             },
             paragraph: {
-              spacing: { after: 200 }, // ~10pt
+              spacing: { line: 276, before: 0, after: 160 }, // 1.15 line spacing
               alignment: AlignmentType.LEFT,
             },
           },
@@ -127,12 +137,12 @@ export class DocxGenerator {
              next: "Normal",
              quickFormat: true,
              run: {
-                 font: "Arial",
-                 size: 20, // 10pt
-                 color: "666666"
+                 font: "Courier New",
+                 size: 18, // 9pt
+                 color: "6B7280"
              },
              paragraph: {
-                 spacing: { after: 240 }
+                 spacing: { after: 300 }
              }
           }
         ],
@@ -151,288 +161,191 @@ export class DocxGenerator {
   private async parseNode(element: Element): Promise<FileChild | FileChild[] | null> {
     const tagName = element.tagName.toLowerCase();
     
-    // Ignore non-content tags
     if (['style', 'script', 'head', 'meta', 'link', 'title', 'noscript'].includes(tagName)) {
         return null;
     }
 
     switch (tagName) {
       case "h1":
-        // Document Title
-        return new Paragraph({
-          text: element.textContent || "",
-          style: "DocTitle",
-        });
+        return new Paragraph({ text: element.textContent || "", style: "DocTitle" });
 
       case "h2":
-        // Major Phases -> Heading 1 (18pt)
-        return new Paragraph({
-          text: element.textContent || "",
-          heading: HeadingLevel.HEADING_1,
-        });
+        return new Paragraph({ text: element.textContent || "", heading: HeadingLevel.HEADING_1 });
 
       case "h3":
-        // Sequential Steps -> Heading 2 (14pt)
-        return new Paragraph({
-          text: element.textContent || "",
-          heading: HeadingLevel.HEADING_2,
-        });
+        return new Paragraph({ text: element.textContent || "", heading: HeadingLevel.HEADING_2 });
       
       case "h4":
-         // Specific Tasks -> Heading 3 (12pt)
-         return new Paragraph({
-             text: element.textContent || "",
-             heading: HeadingLevel.HEADING_3
-         });
+         return new Paragraph({ text: element.textContent || "", heading: HeadingLevel.HEADING_3 });
 
       case "p":
-        // Check for metadata class
         if (element.classList.contains('metadata')) {
-            return new Paragraph({
-                children: this.parseInlineChildren(element),
-                style: "Subtitle"
-            });
+            return new Paragraph({ children: this.parseInlineChildren(element), style: "Subtitle" });
         }
-        return new Paragraph({
-          children: this.parseInlineChildren(element),
-          style: "Normal",
-        });
+        return new Paragraph({ children: this.parseInlineChildren(element), style: "Normal" });
 
       case "ul":
-        // Handle unordered lists
-        const ulItems: Paragraph[] = [];
-        for (const li of Array.from(element.children)) {
-          if (li.tagName.toLowerCase() === 'li') {
-            ulItems.push(new Paragraph({
-              children: this.parseInlineChildren(li),
-              bullet: {
-                level: 0,
-              },
-              style: "Normal"
-            }));
-            
-            // Handle nested lists inside LI
-            const nestedUl = li.querySelector('ul');
-            if (nestedUl) {
-                for (const nestedLi of Array.from(nestedUl.children)) {
-                    if (nestedLi.tagName.toLowerCase() === 'li') {
-                        ulItems.push(new Paragraph({
-                            children: this.parseInlineChildren(nestedLi),
-                            bullet: {
-                                level: 1
-                            },
-                            style: "Normal"
-                        }));
-                    }
-                }
-            }
-          }
-        }
-        return ulItems;
-
       case "ol":
-         // Handle ordered lists
-         const olItems: Paragraph[] = [];
-         for (const li of Array.from(element.children)) {
-           if (li.tagName.toLowerCase() === 'li') {
-             olItems.push(new Paragraph({
-               children: this.parseInlineChildren(li),
-               numbering: {
-                 reference: "decimal-numbering",
-                 level: 0,
-               },
-               style: "Normal"
-             }));
-           }
-         }
-         return olItems;
+        return this.parseList(element, 0);
+
+      case "table":
+        return this.parseTable(element as HTMLTableElement);
 
       case "img":
         return this.createImageRun(element as HTMLImageElement);
       
       case "div":
         if (element.classList.contains('warning-box') || element.classList.contains('warning')) {
-           // Special handling for warning boxes - bold red text
            const paragraphs: Paragraph[] = [];
-           const childPs = element.querySelectorAll('p');
-           childPs.forEach(p => {
-               paragraphs.push(new Paragraph({
-                   children: [new TextRun({
-                       text: p.textContent || "",
-                       bold: true,
-                       color: "FF0000", // Red
-                       font: "Arial"
-                   })],
-               }));
-           });
-           const childUls = element.querySelectorAll('ul li');
-           childUls.forEach(li => {
-              paragraphs.push(new Paragraph({
-                   children: [new TextRun({
-                       text: li.textContent || "",
-                       bold: true,
-                       color: "FF0000",
-                       font: "Arial"
-                   })],
-                   bullet: { level: 0 }
-               }));
-           });
+           const childElements = Array.from(element.children);
+           for (const child of childElements) {
+               const parsed = await this.parseNode(child);
+               if (parsed) {
+                   if (Array.isArray(parsed)) {
+                       // Force style on all children of warning box
+                       parsed.forEach(p => {
+                           if (p instanceof Paragraph) {
+                               p.addChildToStart(new TextRun({ text: "⚠️ ", bold: true }));
+                           }
+                       });
+                       paragraphs.push(...parsed as Paragraph[]);
+                   } else if (parsed instanceof Paragraph) {
+                       paragraphs.push(parsed);
+                   }
+               }
+           }
            return paragraphs;
         }
-        // Generic div fallthrough - if it has content, treat as paragraph
-        if (element.textContent?.trim() && !element.querySelector('p, div, ul, ol, h1, h2, h3, h4')) {
-             return new Paragraph({
-                children: this.parseInlineChildren(element),
-                style: "Normal"
-            });
+        if (element.textContent?.trim()) {
+            const children = await Promise.all(Array.from(element.children).map(c => this.parseNode(c)));
+            return children.flat().filter(c => c !== null) as FileChild[];
         }
         return null;
 
       default:
-        // Fallback for unknown block elements that contain text
         if (element.textContent?.trim() && element.childNodes.length > 0) {
-            // Check if it's just text or inline nodes
-            const hasBlockChildren = Array.from(element.children).some(c => 
-                ['p', 'div', 'h1', 'h2', 'h3', 'ul', 'ol', 'table'].includes(c.tagName.toLowerCase())
-            );
-            
-            if (!hasBlockChildren) {
-                 return new Paragraph({
-                    children: this.parseInlineChildren(element),
-                    style: "Normal"
-                 });
-            }
+             return new Paragraph({ children: this.parseInlineChildren(element), style: "Normal" });
         }
         return null;
     }
   }
 
-  private parseInlineChildren(element: Element): (TextRun | ImageRun)[] {
-    const runs: (TextRun | ImageRun)[] = [];
-    
-    // Attempt to extract inline styles from the parent element to pass down to children text
-    const htmlEl = element as HTMLElement;
-    let inheritedColor: string | undefined = undefined;
-    let inheritedSize: number | undefined = undefined;
+  private parseList(listEl: Element, level: number): Paragraph[] {
+    const isOrdered = listEl.tagName.toLowerCase() === 'ol';
+    const items: Paragraph[] = [];
 
-    if (htmlEl.style) {
-        if (htmlEl.style.color) {
-            inheritedColor = this.parseColor(htmlEl.style.color);
+    for (const li of Array.from(listEl.children)) {
+      if (li.tagName.toLowerCase() === 'li') {
+        // Collect text parts before any nested list
+        const textParts: Element[] = [];
+        const nestedLists: Element[] = [];
+        
+        li.childNodes.forEach(node => {
+            if (node.nodeType === Node.ELEMENT_NODE) {
+                const el = node as Element;
+                if (['ul', 'ol'].includes(el.tagName.toLowerCase())) {
+                    nestedLists.push(el);
+                } else {
+                    textParts.push(el);
+                }
+            }
+        });
+
+        items.push(new Paragraph({
+          children: this.parseInlineChildren(li, true), // Filter out nested list elements from inline
+          bullet: !isOrdered ? { level } : undefined,
+          numbering: isOrdered ? { reference: "decimal-numbering", level } : undefined,
+          style: "Normal",
+          indent: { left: 720 * (level + 1) }
+        }));
+
+        // Handle nested
+        nestedLists.forEach(nested => {
+            items.push(...this.parseList(nested, level + 1));
+        });
+      }
+    }
+    return items;
+  }
+
+  private parseTable(tableEl: HTMLTableElement): Table {
+    const rows: TableRow[] = [];
+    const htmlRows = Array.from(tableEl.rows);
+
+    for (const htmlRow of htmlRows) {
+        const cells: TableCell[] = [];
+        const htmlCells = Array.from(htmlRow.cells);
+
+        for (const htmlCell of htmlCells) {
+            cells.push(new TableCell({
+                children: [new Paragraph({
+                    children: this.parseInlineChildren(htmlCell),
+                    style: "Normal",
+                    spacing: { after: 0 }
+                })],
+                verticalAlign: VerticalAlign.CENTER,
+                shading: htmlRow.parentElement?.tagName.toLowerCase() === 'thead' ? { fill: "F3F4F6", type: "solid", color: "F3F4F6" } : undefined,
+                borders: {
+                    top: { style: BorderStyle.SINGLE, size: 1, color: "E5E7EB" },
+                    bottom: { style: BorderStyle.SINGLE, size: 1, color: "E5E7EB" },
+                    left: { style: BorderStyle.SINGLE, size: 1, color: "E5E7EB" },
+                    right: { style: BorderStyle.SINGLE, size: 1, color: "E5E7EB" },
+                },
+                margins: { top: 100, bottom: 100, left: 100, right: 100 }
+            }));
         }
-        if (htmlEl.style.fontSize) {
-            inheritedSize = this.parseFontSize(htmlEl.style.fontSize);
-        }
+        rows.push(new TableRow({ children: cells }));
     }
 
+    return new Table({
+        rows: rows,
+        width: { size: 100, type: WidthType.PERCENTAGE },
+        layout: TableLayoutType.AUTOFIT,
+        borders: {
+            top: { style: BorderStyle.SINGLE, size: 2, color: "D1D5DB" },
+            bottom: { style: BorderStyle.SINGLE, size: 2, color: "D1D5DB" },
+            left: { style: BorderStyle.SINGLE, size: 2, color: "D1D5DB" },
+            right: { style: BorderStyle.SINGLE, size: 2, color: "D1D5DB" },
+            insideHorizontal: { style: BorderStyle.SINGLE, size: 1, color: "E5E7EB" },
+            insideVertical: { style: BorderStyle.SINGLE, size: 1, color: "E5E7EB" },
+        }
+    });
+  }
+
+  private parseInlineChildren(element: Element, skipLists = false): (TextRun | ImageRun)[] {
+    const runs: (TextRun | ImageRun)[] = [];
+    
     element.childNodes.forEach((node) => {
       if (node.nodeType === Node.TEXT_NODE) {
-        if (node.textContent) {
+        if (node.textContent?.trim() || node.textContent === " ") {
           runs.push(new TextRun({
              text: node.textContent,
              font: "Arial",
-             size: inheritedSize || 22,
-             color: inheritedColor || undefined
+             size: 20
           }));
         }
       } else if (node.nodeType === Node.ELEMENT_NODE) {
         const el = node as Element;
         const tagName = el.tagName.toLowerCase();
         
-        // Check local styles for the inline element
-        const childHtmlEl = el as HTMLElement;
-        let childColor = inheritedColor;
-        let childSize = inheritedSize || 22;
-
-        if (childHtmlEl.style) {
-            if (childHtmlEl.style.color) {
-                const c = this.parseColor(childHtmlEl.style.color);
-                if (c) childColor = c;
-            }
-            if (childHtmlEl.style.fontSize) {
-                const s = this.parseFontSize(childHtmlEl.style.fontSize);
-                if (s) childSize = s;
-            }
-        }
+        if (skipLists && ['ul', 'ol'].includes(tagName)) return;
 
         if (tagName === 'strong' || tagName === 'b') {
-            runs.push(new TextRun({
-                text: el.textContent || "",
-                bold: true,
-                font: "Arial",
-                size: childSize,
-                color: childColor
-            }));
+            runs.push(new TextRun({ text: el.textContent || "", bold: true, font: "Arial", size: 20 }));
         } else if (tagName === 'code') {
-            runs.push(new TextRun({
-                text: el.textContent || "",
-                font: "Courier New",
-                size: childSize,
-                color: childColor
-            }));
-        } else if (tagName === 'span') {
-             // Handle span with warning class specifically
-            if (el.classList.contains('warning')) {
-                runs.push(new TextRun({
-                    text: el.textContent || "",
-                    bold: true,
-                    color: "FF0000",
-                    font: "Arial",
-                    size: childSize
-                }));
-            } else {
-                // Generic span, apply styles
-                runs.push(new TextRun({
-                    text: el.textContent || "",
-                    font: "Arial",
-                    size: childSize,
-                    color: childColor
-                }));
-            }
+            runs.push(new TextRun({ text: el.textContent || "", font: "Courier New", size: 18, color: "3B82F6", shading: { fill: "F3F4F6" } }));
         } else if (tagName === 'br') {
-            runs.push(new TextRun({
-                text: "\n"
-            }));
+            runs.push(new TextRun({ text: "", break: 1 }));
+        } else if (tagName === 'img') {
+            // We can't await inside sync loop easily, but ImageRun can take buffer if we pre-processed.
+            // For inline images, we usually skip or treat as blocks in this parser version.
         } else {
-             runs.push(new TextRun({
-                 text: el.textContent || "",
-                 font: "Arial",
-                 size: childSize,
-                 color: childColor
-             }));
+             runs.push(new TextRun({ text: el.textContent || "", font: "Arial", size: 20 }));
         }
       }
     });
 
     return runs;
-  }
-
-  private parseColor(color: string): string | undefined {
-      if (!color) return undefined;
-      // Handle hex
-      if (color.startsWith('#')) return color.substring(1);
-      // Handle rgb
-      if (color.startsWith('rgb')) {
-          const match = color.match(/\d+/g);
-          if (match && match.length >= 3) {
-              const r = parseInt(match[0]).toString(16).padStart(2, '0');
-              const g = parseInt(match[1]).toString(16).padStart(2, '0');
-              const b = parseInt(match[2]).toString(16).padStart(2, '0');
-              return `${r}${g}${b}`;
-          }
-      }
-      return undefined;
-  }
-
-  private parseFontSize(sizeStr: string): number | undefined {
-      if (!sizeStr) return undefined;
-      const match = sizeStr.match(/(\d+(\.\d+)?)/);
-      if (match) {
-          const val = parseFloat(match[1]);
-          // Approximate conversion: 1px = 1.5 half-points (assuming 96dpi where 1px=0.75pt, and docx uses half-points)
-          // 16px -> 12pt -> 24 half-points.
-          return Math.round(val * 1.5);
-      }
-      return undefined;
   }
 
   private async createImageRun(img: HTMLImageElement): Promise<Paragraph | null> {
@@ -441,8 +354,6 @@ export class DocxGenerator {
 
     try {
         let imageBuffer: ArrayBuffer;
-        
-        // Dimensions
         let naturalWidth = 0;
         let naturalHeight = 0;
 
@@ -456,8 +367,7 @@ export class DocxGenerator {
             }
             imageBuffer = bytes.buffer;
 
-            // Load image to get dimensions
-            await new Promise<void>((resolve, reject) => {
+            await new Promise<void>((resolve) => {
                 const tempImg = new Image();
                 tempImg.onload = () => {
                     naturalWidth = tempImg.naturalWidth;
@@ -465,8 +375,6 @@ export class DocxGenerator {
                     resolve();
                 };
                 tempImg.onerror = () => {
-                     // If loading fails, fallback to defaults
-                     console.warn("Could not load image to get dimensions");
                      naturalWidth = 400; 
                      naturalHeight = 300;
                      resolve();
@@ -475,30 +383,13 @@ export class DocxGenerator {
             });
 
         } else {
-             return new Paragraph({
-                 text: `[Image: ${img.alt || 'External Image'}]`,
-                 style: "Normal"
-             });
+             return new Paragraph({ text: `[Image: ${img.alt || 'External Asset'}]`, style: "Normal" });
         }
 
-        // Scale proportionally
-        const MAX_WIDTH = 650;
+        const MAX_WIDTH = 550; // Points
         let finalWidth = naturalWidth;
         let finalHeight = naturalHeight;
 
-        // Check if inline styles have width override
-        if (img.style && img.style.width) {
-             const w = parseFloat(img.style.width);
-             if (!isNaN(w)) {
-                 // Assume pixel intent, but check if it's small or large
-                 // If user set style="width: 50%", we can't easily parse that without context
-                 // But visual editor sets pixels? Or %?
-                 // The visual editor sets style.maxWidth?
-                 // Let's stick to natural dimensions logic capped at MAX_WIDTH for robustness
-             }
-        }
-        
-        // Simple resizing
         if (naturalWidth > MAX_WIDTH) {
             const scaleFactor = MAX_WIDTH / naturalWidth;
             finalWidth = MAX_WIDTH;
@@ -509,19 +400,15 @@ export class DocxGenerator {
             children: [
                 new ImageRun({
                     data: imageBuffer,
-                    transformation: {
-                        width: finalWidth,
-                        height: finalHeight
-                    }
+                    transformation: { width: finalWidth, height: finalHeight }
                 })
             ],
-            spacing: { after: 120 }, // 6pt spacing
-            alignment: AlignmentType.CENTER // Spec says Center aligned
+            spacing: { before: 200, after: 200 },
+            alignment: AlignmentType.CENTER
         });
 
     } catch (e) {
-        console.warn("Failed to process image for DOCX", e);
-        return new Paragraph({ text: "[Image Upload Failed]" });
+        return new Paragraph({ text: "[Image Asset Reference Missing]" });
     }
   }
 }
