@@ -13,6 +13,7 @@ import { Sidebar, ProjectSummary } from './components/Sidebar';
 import { LivePulse } from './components/LivePulse';
 import { SettingsModal, AppSettings } from './components/SettingsModal';
 import { HelpModal } from './components/HelpModal';
+import { AppOverview } from './components/AppOverview';
 
 interface ProjectData extends ProjectSummary {
     messages: Message[];
@@ -36,11 +37,9 @@ const App: React.FC = () => {
   const [generationStatus, setGenerationStatus] = useState<string>("");
   const [streamSize, setStreamSize] = useState<number>(0);
   
-  // Live State
   const [isLiveConnected, setIsLiveConnected] = useState(false);
   const [isLivePanelOpen, setIsLivePanelOpen] = useState(false);
   
-  // Settings & Help State
   const [showSettings, setShowSettings] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [appSettings, setAppSettings] = useState<AppSettings>({
@@ -56,8 +55,6 @@ const App: React.FC = () => {
   });
 
   const activeProject = projects.find(p => p.id === activeProjectId) || projects[0];
-
-  // Determine if we are in the initial welcome state
   const isInitialState = activeProject.messages.length === 0 && !isGenerating;
 
   const currentArtifacts = useMemo(() => {
@@ -103,8 +100,7 @@ const App: React.FC = () => {
       reader.readAsDataURL(file);
       reader.onload = () => {
         if (typeof reader.result === 'string') {
-          const base64 = reader.result.split(',')[1];
-          resolve(base64);
+          resolve(reader.result.split(',')[1]);
         } else {
           reject(new Error('Failed to convert file to base64'));
         }
@@ -114,34 +110,40 @@ const App: React.FC = () => {
   };
   
   const blobUrlToBase64 = async (url: string): Promise<string> => {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.readAsDataURL(blob);
+          reader.onload = () => resolve((reader.result as string).split(',')[1]);
+          reader.onerror = reject;
+      });
+  };
+
+  const extractTextFromPdf = async (file: File): Promise<string> => {
       try {
-          const response = await fetch(url);
-          const blob = await response.blob();
-          return new Promise((resolve, reject) => {
-              const reader = new FileReader();
-              reader.readAsDataURL(blob);
-              reader.onload = () => {
-                 if (typeof reader.result === 'string') {
-                     resolve(reader.result.split(',')[1]);
-                 } else {
-                     reject(new Error("Failed to convert blob"));
-                 }
-              };
-              reader.onerror = reject;
-          });
-      } catch (e) {
-          throw new Error(`Failed to fetch blob from URL: ${url}`);
+          const arrayBuffer = await file.arrayBuffer();
+          const pdf = await (window as any).pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+          let fullText = "";
+          for (let i = 1; i <= pdf.numPages; i++) {
+              const page = await pdf.getPage(i);
+              const content = await page.getTextContent();
+              fullText += content.items.map((item: any) => item.str).join(" ") + "\n";
+          }
+          return fullText;
+      } catch (err) {
+          return "[PDF Text Extraction Failed]";
       }
   };
 
   const handleSendMessage = async (text: string, files: File[] = [], fileType: 'source' | 'screenshot' = 'source', templateType: string = 'auto') => {
     setIsGenerating(true);
-    setGenerationStatus("Analyzing Input Context");
+    setGenerationStatus("Synthesizing Input Context");
     setStreamSize(0);
     
-    const messageId = crypto.randomUUID();
+    const pastMessages = [...activeProject.messages];
     const newUserMsg: Message = {
-        id: messageId,
+        id: crypto.randomUUID(),
         role: 'user',
         content: text,
         timestamp: new Date(),
@@ -152,87 +154,52 @@ const App: React.FC = () => {
         })) : undefined
     };
 
-    updateActiveProject(p => ({
-        ...p,
-        messages: [...p.messages, newUserMsg]
-    }));
+    updateActiveProject(p => ({ ...p, messages: [...p.messages, newUserMsg] }));
 
     try {
       const geminiAttachments: Attachment[] = [];
       const newImageMapEntries: Record<string, string> = {};
 
       for (const file of files) {
-          try {
-              const base64 = await fileToBase64(file);
-              const id = `img-${crypto.randomUUID().substring(0, 8)}`; 
-              
-              geminiAttachments.push({
-                  data: base64,
-                  mimeType: file.type,
-                  id: id
-              });
+          const base64 = await fileToBase64(file);
+          const id = `img-${crypto.randomUUID().substring(0, 8)}`; 
+          let extractedText: string | undefined;
 
-              if (file.type.startsWith('image/')) {
-                  newImageMapEntries[id] = `data:${file.type};base64,${base64}`;
-              }
-          } catch (e) {
-              console.error(`Failed to process file ${file.name}`, e);
+          if (file.type === 'application/pdf') {
+              setGenerationStatus(`Parsing ${file.name}`);
+              extractedText = await extractTextFromPdf(file);
           }
+          
+          geminiAttachments.push({ data: base64, mimeType: file.type, id, extractedText });
+          if (file.type.startsWith('image/')) newImageMapEntries[id] = `data:${file.type};base64,${base64}`;
       }
 
       if (Object.keys(newImageMapEntries).length > 0) {
-          updateActiveProject(p => ({
-              ...p,
-              imageMap: { ...p.imageMap, ...newImageMapEntries }
-          }));
+          updateActiveProject(p => ({ ...p, imageMap: { ...p.imageMap, ...newImageMapEntries } }));
       }
 
-      const currentHistory = [...activeProject.messages, newUserMsg];
-      
-      const historyForGemini: ChatMessage[] = await Promise.all(currentHistory.map(async m => {
+      const historyForGemini: ChatMessage[] = await Promise.all(pastMessages.map(async m => {
           let textContent = m.content;
           const histImages: { data: string; mimeType: string }[] = [];
-
-          if (m.attachments && m.attachments.length > 0) {
+          if (m.attachments) {
               for (const att of m.attachments) {
                   if (att.type === 'image') {
                       try {
                         const b64 = await blobUrlToBase64(att.url);
-                        const mime = 'image/png'; 
-                        histImages.push({ data: b64, mimeType: mime });
-                      } catch (e) {
-                          console.error("Failed to restore history image", e);
-                      }
+                        histImages.push({ data: b64, mimeType: 'image/png' });
+                      } catch (e) {}
                   }
               }
           }
-
-          if (m.artifact) {
-              textContent += `\n\n[SYSTEM ARTIFACT CONTEXT - Name: ${m.artifact.name}]:\n\`\`\`html\n${m.artifact.html}\n\`\`\``;
-          }
-          return {
-              role: m.role,
-              text: textContent,
-              images: histImages
-          };
+          if (m.artifact) textContent += `\n\n[CONTEXT ARTIFACT]:\n\`\`\`html\n${m.artifact.html}\n\`\`\``;
+          return { role: m.role, text: textContent, images: histImages };
       }));
 
-      // CONTEXTUAL PROMPT LOGIC
       let modifiedText = text;
-      const isScreenshotAnalysis = files.length > 0 && fileType === 'screenshot';
-      const isSourceUpload = files.length > 0 && fileType === 'source';
-      const isRefinement = activeProject.activeCreation !== null;
-      
-      if (isScreenshotAnalysis) {
-        modifiedText = `[KB CONTEXT ANALYSIS] Analyze screenshots for UI elements, errors, and states. Generate a "Screenshot Analysis Report" in HTML.`;
-      } else if (isSourceUpload) {
-        if (isRefinement) {
-            modifiedText = `[REFINEMENT CONTEXT] Update existing artifact using reference files. Refinement Request: ${text}`;
-        } else {
-            const hasAnalysis = currentHistory.some(m => m.artifact?.name.toLowerCase().includes('analysis'));
-            const analysisContext = hasAnalysis ? "\n[System: Use previous screenshot analysis artifacts for visual labels.]" : "";
-            modifiedText = `[KB GENERATION] Convert to ${templateType !== 'auto' ? templateType : 'Standard KB Article'}. ${analysisContext} ${text}`;
-        }
+      if (files.length > 0 && fileType === 'screenshot') {
+        modifiedText = `[ANALYSIS] Analyze UI context. ${text}`;
+      } else if (activeProject.activeCreation) {
+        modifiedText = `[REFINEMENT] Update existing article. ${text}`;
       }
 
       const html = await bringToLife(
@@ -240,61 +207,39 @@ const App: React.FC = () => {
           modifiedText, 
           geminiAttachments, 
           templateType, 
-          (partialText) => {
-            setStreamSize(partialText.length);
-            const lower = partialText.toLowerCase();
-            if (lower.length < 100) {
-                setGenerationStatus("Synthesizing Context");
-            } else if (lower.includes('<style')) {
-                setGenerationStatus("Drafting UI Theme");
-            } else if (lower.includes('<h1') || lower.includes('<h2')) {
-                setGenerationStatus("Structuring Content Hierarchy");
-            } else if (lower.includes('<img')) {
-                setGenerationStatus("Injecting Visual Evidence");
-            } else if (lower.includes('<li>') || lower.includes('<ul>')) {
-                setGenerationStatus("Formulating Step-by-Step Logic");
-            } else {
-                setGenerationStatus("Finalizing Documentation");
-            }
-          },
+          (partialText) => setStreamSize(partialText.length),
           appSettings.provider === 'gemini' ? appSettings.generationModel : appSettings.openRouterModel,
           appSettings.provider,
           appSettings.openRouterKey
       );
       
-      const creationId = crypto.randomUUID();
-      let artifactName = isScreenshotAnalysis ? `Analysis: ${new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}` : (text.split(' ').slice(0, 3).join(' ') || "New Article");
-      
       const newArtifact: Creation = {
-          id: creationId,
-          name: artifactName,
+          id: crypto.randomUUID(),
+          name: text.split(' ').slice(0, 3).join(' ') || "New KB Article",
           html: html,
           originalImage: files.length > 0 ? newUserMsg.attachments?.[0].url : undefined,
           timestamp: new Date()
       };
 
-      const modelMsg: Message = {
-          id: crypto.randomUUID(),
-          role: 'model',
-          content: isScreenshotAnalysis ? "I've analyzed the screenshots. You can view the report in the preview pane." : "I've generated the documentation based on your input.",
-          timestamp: new Date(),
-          artifact: newArtifact
-      };
-
-      updateActiveProject(p => ({
-          ...p,
-          messages: [...p.messages, modelMsg],
-          activeCreation: newArtifact
-      }));
-
-    } catch (error: any) {
-      console.error("Generation failed", error);
       updateActiveProject(p => ({
           ...p,
           messages: [...p.messages, {
               id: crypto.randomUUID(),
               role: 'model',
-              content: `Generation failed: ${error.message || "Something went wrong during generation."}`,
+              content: "Artifact successfully generated.",
+              timestamp: new Date(),
+              artifact: newArtifact
+          }],
+          activeCreation: newArtifact
+      }));
+
+    } catch (error: any) {
+      updateActiveProject(p => ({
+          ...p,
+          messages: [...p.messages, {
+              id: crypto.randomUUID(),
+              role: 'model',
+              content: error.message,
               timestamp: new Date()
           }]
       }));
@@ -306,111 +251,89 @@ const App: React.FC = () => {
 
   const handleUpdateArtifact = (id: string, html: string) => {
       updateActiveProject(p => {
-          const newMessages = p.messages.map(m => {
-              if (m.artifact?.id === id) {
-                  return { ...m, artifact: { ...m.artifact, html } };
-              }
-              return m;
-          });
+          const newMessages = p.messages.map(m => (m.artifact?.id === id ? { ...m, artifact: { ...m.artifact, html } } : m));
           const newActiveCreation = p.activeCreation?.id === id ? { ...p.activeCreation, html } : p.activeCreation;
           return { ...p, messages: newMessages, activeCreation: newActiveCreation };
       });
   };
 
-  const handleSelectArtifact = (creation: Creation) => {
-      updateActiveProject(p => ({ ...p, activeCreation: creation }));
-  };
-
   return (
     <div className="flex h-screen w-full bg-[#09090b] text-zinc-100 overflow-hidden font-sans">
-      {/* Conditionally hide sidebar if we are at the very beginning of a session */}
       {!isInitialState && (
-        <Sidebar 
-            projects={projects}
-            activeProjectId={activeProjectId}
-            onSelectProject={setActiveProjectId}
-            onNewProject={handleNewProject}
-            onDeleteProject={handleDeleteProject}
-            onOpenSettings={() => setShowSettings(true)}
-            onOpenHelp={() => setShowHelp(true)}
-            artifacts={currentArtifacts}
-            onSelectArtifact={handleSelectArtifact}
-            activeArtifactId={activeProject.activeCreation?.id}
-        />
+          <div className="animate-in slide-in-from-left duration-300">
+            <Sidebar 
+                projects={projects}
+                activeProjectId={activeProjectId}
+                onSelectProject={setActiveProjectId}
+                onNewProject={handleNewProject}
+                onDeleteProject={handleDeleteProject}
+                onOpenSettings={() => setShowSettings(true)}
+                onOpenHelp={() => setShowHelp(true)}
+                artifacts={currentArtifacts}
+                onSelectArtifact={updateActiveProject.bind(null, p => ({ ...p, activeCreation: p.activeCreation }))}
+                activeArtifactId={activeProject.activeCreation?.id}
+            />
+          </div>
       )}
       
       <main className="flex-1 flex flex-col min-w-0 relative">
-        <div className={`flex-1 flex min-w-0 ${isInitialState ? 'flex-col items-center justify-center' : 'flex-col md:flex-row'}`}>
-          
-          <div className={`flex-1 flex flex-col transition-all duration-300 ${isLivePanelOpen ? 'w-0 opacity-0 pointer-events-none' : 'w-full opacity-100'}`}>
-             <LivePreview 
-                creation={activeProject.activeCreation}
-                isLoading={isGenerating}
-                loadingMessage={generationStatus}
-                streamSize={streamSize}
-                imageMap={activeProject.imageMap}
-                onUpdateArtifact={handleUpdateArtifact}
-                isLive={isLiveConnected}
-                onToggleLive={() => setIsLivePanelOpen(true)}
-             />
+        <div className={`flex-1 flex min-w-0 flex-col md:flex-row h-full`}>
+          <div className={`flex-1 flex flex-col transition-all duration-300 ${isLivePanelOpen ? 'w-0 opacity-0 pointer-events-none' : 'w-full opacity-100'} h-full`}>
+             {isInitialState ? (
+                 <div className="flex-1 flex items-center justify-center p-6 sm:p-12 bg-[#09090b] md:border-r border-zinc-800 animate-in fade-in duration-500 overflow-y-auto">
+                    <div className="w-full max-w-2xl py-8">
+                        <InputArea onGenerate={handleSendMessage} isGenerating={isGenerating} onStartLive={() => setIsLivePanelOpen(true)} />
+                    </div>
+                 </div>
+             ) : (
+                 <LivePreview 
+                    creation={activeProject.activeCreation}
+                    isLoading={isGenerating}
+                    loadingMessage={generationStatus}
+                    streamSize={streamSize}
+                    imageMap={activeProject.imageMap}
+                    onUpdateArtifact={handleUpdateArtifact}
+                    isLive={isLiveConnected}
+                    onToggleLive={() => setIsLivePanelOpen(true)}
+                 />
+             )}
           </div>
           
-          {/* Chat Panel - Hidden on initial state unless generating */}
-          {!isInitialState && (
-            <div className={`transition-all duration-300 ${isLivePanelOpen ? 'w-full' : 'w-full md:w-[400px] border-l border-zinc-800'}`}>
-              {isLivePanelOpen ? (
-                  <LivePulse 
-                      isActive={isLivePanelOpen}
-                      onClose={() => setIsLivePanelOpen(false)}
-                      currentHtml={activeProject.activeCreation?.html}
-                      onUpdateHtml={(html) => handleUpdateArtifact(activeProject.activeCreation?.id || '', html)}
-                      mode="panel"
-                      onToggleMode={() => setIsLivePanelOpen(false)}
-                      liveConfig={{
-                          model: appSettings.liveModel,
-                          voice: appSettings.liveVoice,
-                          promptMode: appSettings.livePromptMode,
-                          customPrompt: appSettings.customLivePrompt
-                      }}
-                  />
-              ) : (
-                  <Chat 
-                      messages={activeProject.messages}
-                      onSendMessage={handleSendMessage}
-                      isGenerating={isGenerating}
-                      onSelectArtifact={handleSelectArtifact}
-                      activeArtifactId={activeProject.activeCreation?.id}
-                      onStartLive={() => setIsLivePanelOpen(true)}
-                      isLive={isLiveConnected}
-                  />
-              )}
-            </div>
-          )}
-        </div>
-        
-        {/* Floating / Center Input Area */}
-        {(!activeProject.activeCreation || isInitialState) && !isGenerating && !isLivePanelOpen && (
-            <div className={`${isInitialState ? 'relative w-full' : 'absolute inset-x-0 bottom-0'} p-4 md:p-8 z-10 animate-in fade-in slide-in-from-bottom-4 duration-700`}>
-                <InputArea 
-                    onGenerate={(prompt, files, template) => handleSendMessage(prompt, files, 'source', template)}
-                    isGenerating={isGenerating}
-                    onStartLive={() => setIsLivePanelOpen(true)}
+          <div className={`transition-all duration-300 ${isLivePanelOpen ? 'w-full' : (isInitialState ? 'flex-1 md:w-1/2' : 'w-full md:w-[420px] border-l border-zinc-800')} h-full`}>
+            {isLivePanelOpen ? (
+                <LivePulse 
+                    isActive={isLivePanelOpen}
+                    onClose={() => setIsLivePanelOpen(false)}
+                    currentHtml={activeProject.activeCreation?.html}
+                    onUpdateHtml={(html) => handleUpdateArtifact(activeProject.activeCreation?.id || '', html)}
+                    mode="panel"
+                    onToggleMode={() => setIsLivePanelOpen(false)}
+                    liveConfig={{
+                        model: appSettings.liveModel,
+                        voice: appSettings.liveVoice,
+                        promptMode: appSettings.livePromptMode,
+                        customPrompt: appSettings.customLivePrompt
+                    }}
                 />
-            </div>
-        )}
+            ) : isInitialState ? (
+                <div className="h-full border-t md:border-t-0 md:border-l border-zinc-800"><AppOverview /></div>
+            ) : (
+                <Chat 
+                    messages={activeProject.messages}
+                    onSendMessage={handleSendMessage}
+                    isGenerating={isGenerating}
+                    onSelectArtifact={(c) => updateActiveProject(p => ({ ...p, activeCreation: c }))}
+                    activeArtifactId={activeProject.activeCreation?.id}
+                    onStartLive={() => setIsLivePanelOpen(true)}
+                    isLive={isLiveConnected}
+                />
+            )}
+          </div>
+        </div>
       </main>
 
-      <SettingsModal 
-        isOpen={showSettings} 
-        onClose={() => setShowSettings(false)} 
-        settings={appSettings}
-        onUpdateSettings={setAppSettings}
-      />
-
-      <HelpModal 
-        isOpen={showHelp} 
-        onClose={() => setShowHelp(false)} 
-      />
+      <SettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} settings={appSettings} onUpdateSettings={setAppSettings} />
+      <HelpModal isOpen={showHelp} onClose={() => setShowHelp(false)} />
     </div>
   );
 };

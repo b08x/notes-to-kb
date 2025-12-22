@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -6,27 +5,21 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { 
     ArrowDownTrayIcon, 
-    CodeBracketIcon, 
-    DocumentTextIcon, 
     PencilIcon, 
     CheckIcon, 
     XMarkIcon, 
-    ArrowUturnLeftIcon, 
-    ArrowUturnRightIcon, 
     PaintBrushIcon, 
     ArrowsPointingOutIcon, 
     ArrowsPointingInIcon, 
     SparklesIcon, 
     BoltIcon, 
     CheckCircleIcon,
-    CloudArrowUpIcon,
-    ChatBubbleLeftRightIcon,
-    Square3Stack3DIcon,
-    CpuChipIcon,
-    DocumentArrowDownIcon
+    DocumentArrowDownIcon,
+    DocumentIcon
 } from '@heroicons/react/24/outline';
 import { Creation } from './CreationHistory';
 import { DocxGenerator } from '../lib/services/DocxGenerator';
+import { PdfGenerator } from '../lib/services/PdfGenerator';
 
 interface LivePreviewProps {
   creation: Creation | null;
@@ -41,7 +34,6 @@ interface LivePreviewProps {
 }
 
 declare global {
-  // Fix: Use 'Window' (uppercase) to correctly extend the global Window interface
   interface Window {
     pdfjsLib: any;
   }
@@ -108,7 +100,6 @@ const PdfRenderer = ({ dataUrl }: { dataUrl: string }) => {
   const [loading, setLoading] = useState(true);
   useEffect(() => {
     const renderPdf = async () => {
-      // Fix: Accessing pdfjsLib on window is now safe due to correctly extended interface
       if (!window.pdfjsLib) { setLoading(false); return; }
       try {
         setLoading(true);
@@ -134,86 +125,8 @@ const PdfRenderer = ({ dataUrl }: { dataUrl: string }) => {
   );
 };
 
-const AppOverview = () => (
-    <div className="w-full h-full overflow-y-auto bg-[#09090b] flex flex-col items-center justify-start p-8 md:p-12 animate-in fade-in duration-700">
-        <div className="max-w-4xl w-full space-y-12">
-            
-            {/* Header */}
-            <div className="text-center space-y-4">
-                <div className="inline-flex p-3 bg-blue-600/10 rounded-2xl border border-blue-500/20 mb-2">
-                    <CpuChipIcon className="w-10 h-10 text-blue-400" />
-                </div>
-                <h1 className="text-3xl md:text-5xl font-black text-white tracking-tighter">
-                    Documentation <span className="text-blue-500">Workspace</span>
-                </h1>
-                <p className="text-zinc-400 text-sm md:text-lg font-medium max-w-2xl mx-auto leading-relaxed">
-                    A collaborative environment where AI transforms your raw technical inputs into professional Knowledge Base articles.
-                </p>
-            </div>
-
-            {/* Steps Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                
-                {/* Step 1 */}
-                <div className="group p-6 rounded-2xl bg-zinc-900/50 border border-zinc-800 hover:border-zinc-700 transition-all">
-                    <div className="w-10 h-10 rounded-lg bg-zinc-800 flex items-center justify-center mb-4 text-zinc-400 group-hover:bg-blue-600/20 group-hover:text-blue-400 transition-colors">
-                        <CloudArrowUpIcon className="w-6 h-6" />
-                    </div>
-                    <h3 className="text-lg font-bold text-white mb-2">1. Upload Sources</h3>
-                    <p className="text-sm text-zinc-500 leading-relaxed">
-                        Drag and drop PDF manuals, text notes, or raw technical drafts. Gemini analyzes your documents to build a factual foundation.
-                    </p>
-                </div>
-
-                {/* Step 2 */}
-                <div className="group p-6 rounded-2xl bg-zinc-900/50 border border-zinc-800 hover:border-zinc-700 transition-all">
-                    <div className="w-10 h-10 rounded-lg bg-zinc-800 flex items-center justify-center mb-4 text-zinc-400 group-hover:bg-purple-600/20 group-hover:text-purple-400 transition-colors">
-                        <Square3Stack3DIcon className="w-6 h-6" />
-                    </div>
-                    <h3 className="text-lg font-bold text-white mb-2">2. Analyze Context</h3>
-                    <p className="text-sm text-zinc-500 leading-relaxed">
-                        Use <span className="text-purple-400 font-bold uppercase text-[10px]">Add Context</span> to upload UI screenshots. The AI cross-references visuals with documentation for precise troubleshooting guides.
-                    </p>
-                </div>
-
-                {/* Step 3 */}
-                <div className="group p-6 rounded-2xl bg-zinc-900/50 border border-zinc-800 hover:border-zinc-700 transition-all">
-                    <div className="w-10 h-10 rounded-lg bg-zinc-800 flex items-center justify-center mb-4 text-zinc-400 group-hover:bg-emerald-600/20 group-hover:text-emerald-400 transition-colors">
-                        <ChatBubbleLeftRightIcon className="w-6 h-6" />
-                    </div>
-                    <h3 className="text-lg font-bold text-white mb-2">3. Chat & Refine</h3>
-                    <p className="text-sm text-zinc-500 leading-relaxed">
-                        Iterate using natural language. Ask to simplify steps, add warnings, or change formatting. Use <strong>Live Pulse</strong> for hands-free voice editing.
-                    </p>
-                </div>
-
-                {/* Step 4 */}
-                <div className="group p-6 rounded-2xl bg-zinc-900/50 border border-zinc-800 hover:border-zinc-700 transition-all">
-                    <div className="w-10 h-10 rounded-lg bg-zinc-800 flex items-center justify-center mb-4 text-zinc-400 group-hover:bg-zinc-100 group-hover:text-zinc-900 transition-colors">
-                        <ArrowDownTrayIcon className="w-6 h-6" />
-                    </div>
-                    <h3 className="text-lg font-bold text-white mb-2">4. Professional Export</h3>
-                    <p className="text-sm text-zinc-500 leading-relaxed">
-                        Download your final documentation as a standard-compliant Word (.docx) file, complete with your custom styling and visual assets.
-                    </p>
-                </div>
-
-            </div>
-
-            {/* Footer Prompt */}
-            <div className="flex flex-col items-center gap-4 pt-4 border-t border-zinc-800/50">
-                <div className="flex items-center gap-2 px-4 py-2 bg-zinc-900 rounded-full border border-zinc-800">
-                    <SparklesIcon className="w-4 h-4 text-blue-400" />
-                    <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-widest">Select a document from the sidebar to begin</span>
-                </div>
-            </div>
-
-        </div>
-    </div>
-);
-
 export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, loadingMessage, streamSize = 0, className = "", imageMap = {}, onUpdateArtifact, isLive, onToggleLive }) => {
-    const [isExporting, setIsExporting] = useState(false);
+    const [isExporting, setIsExporting] = useState<'docx' | 'pdf' | null>(null);
     const [isEditing, setIsEditing] = useState(false);
     const [showStyleEditor, setShowStyleEditor] = useState(false);
     const [isFullScreen, setIsFullScreen] = useState(false);
@@ -243,7 +156,12 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
             body { font-family: 'Segoe UI', sans-serif; line-height: 1.6; color: #1f2937; max-width: 900px; margin: 0 auto; padding: 40px; background-color: #ffffff; }
             h1 { font-size: 2.25rem; font-weight: 700; color: #111827; }
             h2 { font-size: 1.5rem; font-weight: 600; color: #1f2937; margin-top: 2.5rem; border-bottom: 1px solid #e5e7eb; padding-bottom: 0.5rem; }
+            h3, h4 { font-weight: 600; color: #1f2937; margin-top: 1.5rem; }
             img { max-width: 85%; height: auto; display: block; margin: 2rem auto; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+            .ai-diagram, table, .note, .warning, tr, li, h2, h3, h4 { 
+                page-break-inside: avoid; 
+                break-inside: avoid; 
+            }
             [contenteditable="true"]:focus { outline: 2px solid #3b82f6; border-radius: 4px; }
         </style>`;
         return html.includes('</body>') ? html.replace('</body>', `${styleTag}</body>`) : html + styleTag;
@@ -273,7 +191,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
 
     const handleExportDocx = async () => {
         if (!creation || !processedHtml) return;
-        setIsExporting(true);
+        setIsExporting('docx');
         try {
             const generator = new DocxGenerator();
             const blob = await generator.generate(processedHtml);
@@ -284,7 +202,17 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
             link.click();
             URL.revokeObjectURL(url);
         } catch (error) { alert("Failed to generate DOCX."); }
-        finally { setIsExporting(false); }
+        finally { setIsExporting(null); }
+    };
+
+    const handleExportPdf = async () => {
+        if (!creation || !processedHtml) return;
+        setIsExporting('pdf');
+        try {
+            const generator = new PdfGenerator();
+            await generator.generate(processedHtml, `${creation.name}_KB.pdf`);
+        } catch (error) { alert("Failed to generate PDF."); }
+        finally { setIsExporting(null); }
     };
 
     const phases = [
@@ -299,32 +227,32 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
 
   return (
     <div className={`flex flex-col h-full bg-[#121214] border-l border-zinc-800 ${className} ${isFullScreen ? '!fixed !inset-0 !z-[100] !w-screen !h-screen !border-0' : ''}`}>
-      <div className="h-14 flex items-center justify-between px-4 border-b border-zinc-800 bg-[#121214] shrink-0">
-        <div className="flex items-center space-x-2">
-            <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
+      <div className="h-14 flex items-center justify-between px-4 border-b border-zinc-800 bg-[#121214] shrink-0 overflow-x-auto no-scrollbar">
+        <div className="flex items-center space-x-2 shrink-0">
+            <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest whitespace-nowrap">
                 {isLoading ? 'Processing Stream' : (!creation ? 'Welcome' : (isEditing ? 'Draft Edit' : (showStyleEditor ? 'Styling' : 'Artifact View')))}
             </span>
-            {creation && <span className="text-[10px] text-zinc-400 bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800 truncate max-w-[150px]">{creation.name}</span>}
+            {creation && <span className="text-[10px] text-zinc-400 bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800 truncate max-w-[120px]">{creation.name}</span>}
         </div>
         
         {creation && (
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center space-x-2 ml-4">
                 {!isEditing && !showStyleEditor ? (
                     <>
-                        <button onClick={() => setIsEditing(true)} className="flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-bold text-zinc-300 bg-zinc-900 border border-zinc-800 hover:border-zinc-700 rounded-md transition-all"><PencilIcon className="w-3 h-3" /> Edit</button>
-                        <button onClick={() => setShowStyleEditor(true)} className="flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-bold text-zinc-300 bg-zinc-900 border border-zinc-800 hover:border-zinc-700 rounded-md transition-all"><PaintBrushIcon className="w-3 h-3" /> Style</button>
+                        <button onClick={() => setIsEditing(true)} className="flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-bold text-zinc-300 bg-zinc-900 border border-zinc-800 hover:border-zinc-700 rounded-md transition-all whitespace-nowrap"><PencilIcon className="w-3 h-3" /> Edit</button>
+                        <button onClick={() => setShowStyleEditor(true)} className="flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-bold text-zinc-300 bg-zinc-900 border border-zinc-800 hover:border-zinc-700 rounded-md transition-all whitespace-nowrap"><PaintBrushIcon className="w-3 h-3" /> Style</button>
                     </>
                 ) : (
                     <>
-                        <button onClick={handleSaveEdit} className="flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-md transition-all"><CheckIcon className="w-3 h-3" /> Save</button>
-                        <button onClick={() => { setIsEditing(false); setShowStyleEditor(false); }} className="text-[10px] font-bold text-zinc-500 hover:text-white px-2">Cancel</button>
+                        <button onClick={handleSaveEdit} className="flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-md transition-all whitespace-nowrap"><CheckIcon className="w-3 h-3" /> Save</button>
+                        <button onClick={() => { setIsEditing(false); setShowStyleEditor(false); }} className="text-[10px] font-bold text-zinc-500 hover:text-white px-2 whitespace-nowrap">Cancel</button>
                     </>
                 )}
                 
                 {onToggleLive && (
                     <button 
                         onClick={onToggleLive}
-                        className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-bold rounded-md transition-all border ${
+                        className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-bold rounded-md transition-all border whitespace-nowrap ${
                             isLive 
                             ? 'bg-purple-600/20 text-purple-400 border-purple-500/50 shadow-[0_0_10px_rgba(168,85,247,0.2)]' 
                             : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:border-purple-500/30'
@@ -336,27 +264,42 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
                     </button>
                 )}
                 
-                <div className="w-px h-3 bg-zinc-800 mx-1"></div>
+                <div className="w-px h-3 bg-zinc-800 mx-1 shrink-0"></div>
                 
                 <div className="flex items-center gap-2">
                     <button 
-                        onClick={handleExportDocx} 
-                        disabled={isExporting} 
+                        onClick={handleExportPdf} 
+                        disabled={!!isExporting} 
                         className={`
                             flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold rounded-md transition-all whitespace-nowrap
-                            ${isExporting 
+                            ${isExporting === 'pdf' 
+                                ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed border border-zinc-700' 
+                                : 'bg-red-600/10 text-red-400 border border-red-500/30 hover:bg-red-600/20 hover:border-red-500/50 shadow-sm shadow-red-900/10'
+                            }
+                        `}
+                    >
+                        <DocumentIcon className={`w-3.5 h-3.5 ${isExporting === 'pdf' ? 'animate-pulse' : ''}`} />
+                        {isExporting === 'pdf' ? 'PDF...' : 'PDF'}
+                    </button>
+
+                    <button 
+                        onClick={handleExportDocx} 
+                        disabled={!!isExporting} 
+                        className={`
+                            flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold rounded-md transition-all whitespace-nowrap
+                            ${isExporting === 'docx' 
                                 ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed border border-zinc-700' 
                                 : 'bg-blue-600/10 text-blue-400 border border-blue-500/30 hover:bg-blue-600/20 hover:border-blue-500/50 shadow-sm shadow-blue-900/10'
                             }
                         `}
                     >
-                        <DocumentArrowDownIcon className={`w-3.5 h-3.5 ${isExporting ? 'animate-pulse' : ''}`} />
-                        {isExporting ? 'Exporting...' : 'Export DOCX'}
+                        <DocumentArrowDownIcon className={`w-3.5 h-3.5 ${isExporting === 'docx' ? 'animate-pulse' : ''}`} />
+                        {isExporting === 'docx' ? 'DOCX...' : 'DOCX'}
                     </button>
                     
                     <button 
                         onClick={() => setIsFullScreen(!isFullScreen)} 
-                        className="p-1.5 text-zinc-500 hover:text-white hover:bg-zinc-800 rounded-md transition-colors"
+                        className="p-1.5 text-zinc-500 hover:text-white hover:bg-zinc-800 rounded-md transition-colors shrink-0"
                         title="Toggle Fullscreen"
                     >
                         {isFullScreen ? <ArrowsPointingInIcon className="w-4 h-4" /> : <ArrowsPointingOutIcon className="w-4 h-4" />}
@@ -444,7 +387,10 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
                 <div className="w-full h-full bg-zinc-900 flex items-center justify-center p-8"><img src={creation.originalImage} alt="Reference" className="max-w-full max-h-full object-contain opacity-50" /></div>
              )
         ) : (
-            <AppOverview />
+            <div className="w-full h-full flex flex-col items-center justify-center bg-[#09090b] text-zinc-500 animate-in fade-in duration-700">
+                <SparklesIcon className="w-12 h-12 mb-4 opacity-20" />
+                <p className="text-xs font-bold tracking-widest uppercase opacity-40">Ready to transform content</p>
+            </div>
         )}
       </div>
     </div>

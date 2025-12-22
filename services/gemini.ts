@@ -16,11 +16,42 @@ export interface Attachment {
     data: string; // base64
     mimeType: string;
     id?: string;
+    extractedText?: string; // Content of text-based files like PDFs
+}
+
+/**
+ * Parses complex API error responses into human-readable strings.
+ */
+function parseError(error: any): string {
+    if (error instanceof Error && error.message.includes("Failed to fetch")) {
+        return "Network connection failed. Please check your internet and try again.";
+    }
+
+    try {
+        const message = error.message || "";
+        // Gemini SDK often wraps JSON in a string
+        if (message.includes("{") && message.includes("}")) {
+            const start = message.indexOf("{");
+            const end = message.lastIndexOf("}");
+            const jsonStr = message.substring(start, end + 1);
+            const parsed = JSON.parse(jsonStr);
+            
+            const apiError = parsed.error || parsed;
+            if (apiError.code === 429 || apiError.status === "RESOURCE_EXHAUSTED") {
+                const retryDelay = apiError.details?.find((d: any) => d.retryDelay)?.retryDelay;
+                return `Quota exceeded. Please try again ${retryDelay ? `in ${retryDelay}` : "shortly"}.`;
+            }
+            if (apiError.message) return apiError.message;
+        }
+    } catch (e) {
+        // Fallback to raw message
+    }
+    
+    return error.message || "An unexpected error occurred during generation.";
 }
 
 /**
  * Resolves the appropriate model name based on user input and task type.
- * Adheres to the strict model naming guidelines.
  */
 function resolveModelName(modelName: string, provider: 'gemini' | 'openrouter'): string {
     if (provider === 'openrouter') return modelName || 'google/gemini-flash-1.5';
@@ -33,6 +64,32 @@ function resolveModelName(modelName: string, provider: 'gemini' | 'openrouter'):
     return 'gemini-3-flash-preview';
 }
 
+/**
+ * Helper to call a function with exponential backoff retry.
+ */
+async function withRetry<T>(fn: () => Promise<T>, maxRetries = 2): Promise<T> {
+    let lastError: any;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+            return await fn();
+        } catch (error: any) {
+            lastError = error;
+            const message = error.message || "";
+            // Only retry on network errors or 429s
+            const isRetryable = message.includes("429") || 
+                                message.includes("RESOURCE_EXHAUSTED") || 
+                                message.includes("Failed to fetch");
+            
+            if (!isRetryable || attempt === maxRetries) break;
+            
+            // Exponential backoff: 1s, 2s, 4s...
+            const delay = Math.pow(2, attempt) * 1000;
+            await new Promise(r => setTimeout(r, delay));
+        }
+    }
+    throw lastError;
+}
+
 export async function bringToLife(
     history: ChatMessage[], 
     currentPrompt: string, 
@@ -43,213 +100,121 @@ export async function bringToLife(
     provider: 'gemini' | 'openrouter' = 'gemini',
     apiKey?: string
 ): Promise<string> {
-  const effectiveModel = resolveModelName(modelName, provider);
+    const effectiveModel = resolveModelName(modelName, provider);
+    const contextString = (history.map(h => h.text).join(" ") + " " + currentPrompt).toLowerCase();
+    const isKBContext = contextString.includes("kb") || contextString.includes("article");
 
-  const combinedText = (currentPrompt + " " + history.map(h => h.text).join(" ")).toLowerCase();
-  const isKBContext = combinedText.includes("kb") || 
-                      combinedText.includes("article") || 
-                      combinedText.includes("documentation") || 
-                      combinedText.includes("troubleshoot") || 
-                      combinedText.includes("guide");
+    let systemInstruction = GENERIC_SYSTEM_INSTRUCTION;
+    if (isKBContext || templateType !== 'auto') {
+        systemInstruction = getSystemInstruction(templateType, contextString);
+    }
 
-  let systemInstruction = GENERIC_SYSTEM_INSTRUCTION;
-  if (isKBContext || templateType !== 'auto') {
-      systemInstruction = getSystemInstruction(templateType, combinedText);
-  }
-
-  let finalPrompt = attachments.length > 0
-    ? `NEW REQUEST: ${currentPrompt || (isKBContext ? `Convert these documents into a ${templateType === 'auto' ? 'Standard KB Article' : templateType.toUpperCase() + ' document'}.` : "Bring this idea to life.")}`
-    : `NEW REQUEST: ${currentPrompt}`;
-
-  if (attachments.length > 0) {
-      const ids = attachments.filter(a => a.id).map(a => `ID: "${a.id}"`).join(", ");
-      if (ids) {
-          finalPrompt = `[System Context: The following attached images have specific IDs to use in the HTML <img> tags: ${ids}]\n` + finalPrompt;
-      }
-  }
-
-  let fullText = "";
-
-  if (provider === 'openrouter') {
-    const sanitizedKey = (apiKey || "").trim();
-    if (!sanitizedKey) throw new Error("OpenRouter API Key is missing in settings.");
+    let finalPrompt = currentPrompt.trim();
+    if (!finalPrompt && attachments.length > 0) {
+        finalPrompt = isKBContext 
+          ? `Generate a ${templateType === 'auto' ? 'Standard KB Article' : templateType.toUpperCase()} strictly based on the provided source documents.` 
+          : "Analyze the attached files and convert them into a structured document.";
+    }
     
-    const messages: any[] = [
-        { role: 'system', content: systemInstruction }
-    ];
-
-    history.forEach(h => {
-        const content: any[] = [{ type: 'text', text: h.text }];
-        if (h.images && h.images.length > 0) {
-            h.images.forEach(img => {
-                content.push({
-                    type: 'image_url',
-                    image_url: { url: `data:${img.mimeType};base64,${img.data}` }
-                });
-            });
-        }
-        messages.push({
-            role: h.role === 'model' ? 'assistant' : 'user',
-            content: content
+    let attachmentContextText = "";
+    if (attachments.length > 0) {
+        const ids = attachments.filter(a => a.id).map(a => `ID: "${a.id}"`).join(", ");
+        if (ids) attachmentContextText += `[System Context: Use these IDs for <img> tags: ${ids}]\n`;
+        attachments.forEach(att => {
+            if (att.extractedText) {
+                attachmentContextText += `\n--- BEGIN SOURCE CONTENT (ID: ${att.id || 'N/A'}) ---\n${att.extractedText}\n--- END SOURCE CONTENT ---\n`;
+            }
         });
-    });
-
-    const currentMessageContent: any[] = [{ type: 'text', text: finalPrompt }];
-    attachments.forEach(att => {
-        // OpenRouter multimodal support depends on provider; usually handles images
-        if (att.mimeType.startsWith('image/')) {
-            currentMessageContent.push({
-                type: 'image_url',
-                image_url: { url: `data:${att.mimeType};base64,${att.data}` }
-            });
-        } else {
-            // For non-images (like PDFs) in OpenRouter, we describe them or ignore if unsupported
-            console.warn(`Attachment ${att.id} has mimeType ${att.mimeType} which might not be supported by the current OpenRouter model.`);
-        }
-    });
-
-    messages.push({ role: 'user', content: currentMessageContent });
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s timeout
+    }
+    
+    const authoritativePrompt = attachmentContextText ? `${attachmentContextText}\nUSER REQUEST: ${finalPrompt}` : finalPrompt;
 
     try {
-        const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-            method: "POST",
-            headers: {
-                "Authorization": `Bearer ${sanitizedKey}`,
-                "Content-Type": "application/json",
-                "HTTP-Referer": window.location.origin,
-                "X-Title": "Notes to KB"
-            },
-            body: JSON.stringify({
-                model: effectiveModel,
-                messages: messages,
-                stream: true
-            }),
-            signal: controller.signal
-        });
+        return await withRetry(async () => {
+            let fullText = "";
+            if (provider === 'openrouter') {
+                const sanitizedKey = (apiKey || "").trim();
+                if (!sanitizedKey) throw new Error("OpenRouter API Key is missing in settings.");
+                
+                const messages: any[] = [{ role: 'system', content: systemInstruction }];
+                history.forEach(h => {
+                    const content: any[] = [{ type: 'text', text: h.text || "[Context]" }];
+                    if (h.images) h.images.forEach(img => content.push({ type: 'image_url', image_url: { url: `data:${img.mimeType};base64,${img.data}` } }));
+                    messages.push({ role: h.role === 'model' ? 'assistant' : 'user', content: content });
+                });
+                const currentContent: any[] = [{ type: 'text', text: authoritativePrompt || "Generate artifact." }];
+                attachments.forEach(att => { if (att.mimeType.startsWith('image/')) currentContent.push({ type: 'image_url', image_url: { url: `data:${att.mimeType};base64,${att.data}` } }); });
+                messages.push({ role: 'user', content: currentContent });
 
-        clearTimeout(timeoutId);
+                const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+                    method: "POST",
+                    headers: { "Authorization": `Bearer ${sanitizedKey}`, "Content-Type": "application/json" },
+                    body: JSON.stringify({ model: effectiveModel, messages, stream: true, temperature: 0.2 })
+                });
 
-        if (!response.ok) {
-            let errorMsg = `OpenRouter API error (Status ${response.status})`;
-            try {
-                const errData = await response.json();
-                errorMsg = errData.error?.message || errorMsg;
-            } catch (e) { /* ignore parse error */ }
-            throw new Error(errorMsg);
-        }
+                if (!response.ok) throw new Error(await response.text());
 
-        const reader = response.body?.getReader();
-        const decoder = new TextDecoder();
-        if (!reader) throw new Error("Failed to read stream from OpenRouter");
+                const reader = response.body?.getReader();
+                const decoder = new TextDecoder();
+                if (!reader) throw new Error("Stream reader unavailable");
 
-        let buffer = '';
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || '';
-
-            for (const line of lines) {
-                const trimmed = line.trim();
-                if (!trimmed || trimmed === 'data: [DONE]') continue;
-                if (trimmed.startsWith('data: ')) {
-                    try {
-                        const data = JSON.parse(trimmed.slice(6));
-                        const content = data.choices[0]?.delta?.content;
-                        if (content) {
-                            fullText += content;
-                            if (onChunk) onChunk(fullText);
+                let buffer = '';
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || '';
+                    for (const line of lines) {
+                        const trimmed = line.trim();
+                        if (!trimmed || trimmed === 'data: [DONE]') continue;
+                        if (trimmed.startsWith('data: ')) {
+                            try {
+                                const data = JSON.parse(trimmed.slice(6));
+                                const content = data.choices[0]?.delta?.content;
+                                if (content) {
+                                    fullText += content;
+                                    if (onChunk) onChunk(fullText);
+                                }
+                            } catch (e) {}
                         }
-                    } catch (e) {
-                        console.debug("Stream chunk parse error", e, trimmed);
+                    }
+                }
+            } else {
+                const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+                const parts: any[] = [];
+                if (history.length > 0) {
+                    let historyText = "--- HISTORY ---\n";
+                    history.forEach(msg => {
+                        historyText += `${msg.role.toUpperCase()}: ${msg.text}\n`;
+                        if (msg.images) msg.images.forEach(img => parts.push({ inlineData: { data: img.data, mimeType: img.mimeType } }));
+                    });
+                    parts.push({ text: historyText });
+                }
+                parts.push({ text: authoritativePrompt });
+                attachments.forEach(att => parts.push({ inlineData: { data: att.data, mimeType: att.mimeType } }));
+
+                const stream = await ai.models.generateContentStream({
+                  model: effectiveModel,
+                  contents: { parts },
+                  config: { systemInstruction, temperature: 0.2 }
+                });
+
+                for await (const chunk of stream) {
+                    const t = chunk.text;
+                    if (t) {
+                        fullText += t;
+                        if (onChunk) onChunk(fullText);
                     }
                 }
             }
-        }
-    } catch (fetchError: any) {
-        clearTimeout(timeoutId);
-        if (fetchError.name === 'AbortError') {
-            throw new Error("Request to OpenRouter timed out after 60 seconds.");
-        }
-        if (fetchError.message.includes('Failed to fetch') || fetchError.name === 'TypeError') {
-            const isOnline = navigator.onLine;
-            throw new Error(
-                `Network error: Could not reach OpenRouter. ${!isOnline ? 'You appear to be offline.' : 'This could be due to a CORS policy, a blocked VPN, or an incorrect API endpoint. Please check your browser console for more details.'}`
-            );
-        }
-        throw fetchError;
-    }
-  } else {
-    // Gemini Native Implementation
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    
-    const parts: any[] = [];
-    
-    if (history.length > 0) {
-        let historyText = "HISTORY OF CONVERSATION:\n";
-        history.forEach(msg => {
-            historyText += `${msg.role.toUpperCase()}: ${msg.text}\n`;
-            if (msg.images && msg.images.length > 0) {
-                msg.images.forEach(img => {
-                    parts.push({ inlineData: { data: img.data, mimeType: img.mimeType } });
-                });
-            }
+
+            let text = fullText || "<!-- Failed -->";
+            text = text.replace(/^```html\s*/i, '').replace(/^```\s*/, '').replace(/```$/, '');
+            const startIdx = Math.max(text.indexOf('<!DOCTYPE'), text.indexOf('<html'));
+            return startIdx >= 0 ? text.substring(startIdx) : text;
         });
-        parts.push({ text: historyText + "END HISTORY\n\n" });
+    } catch (e: any) {
+        throw new Error(parseError(e));
     }
-
-    parts.push({ text: finalPrompt });
-    attachments.forEach(att => {
-        parts.push({ inlineData: { data: att.data, mimeType: att.mimeType } });
-    });
-
-    try {
-        const responseStream = await ai.models.generateContentStream({
-          model: effectiveModel,
-          contents: { parts: parts },
-          config: {
-            systemInstruction: systemInstruction,
-            temperature: 0.4,
-            topP: 0.95,
-            topK: 40
-          },
-        });
-
-        for await (const chunk of responseStream) {
-            const textChunk = chunk.text;
-            if (textChunk) {
-                fullText += textChunk;
-                if (onChunk) onChunk(fullText);
-            }
-        }
-    } catch (geminiError: any) {
-        console.error("Gemini Native Error:", geminiError);
-        if (geminiError.message?.includes("Failed to fetch")) {
-            throw new Error("Network error: Connection to Gemini API failed. This may be due to a blocked region or network connectivity issues.");
-        }
-        if (geminiError.message?.includes("No endpoints found")) {
-            throw new Error(`The model '${effectiveModel}' does not support multimodal input or is unavailable.`);
-        }
-        throw geminiError;
-    }
-  }
-
-  let text = fullText || "<!-- Failed to generate content -->";
-  text = text.replace(/^```html\s*/i, '').replace(/^```\s*/, '').replace(/```$/, '');
-  
-  const doctypeIdx = text.indexOf('<!DOCTYPE');
-  const htmlIdx = text.indexOf('<html');
-  let startIdx = -1;
-  if (doctypeIdx !== -1 && htmlIdx !== -1) startIdx = Math.min(doctypeIdx, htmlIdx);
-  else if (doctypeIdx !== -1) startIdx = doctypeIdx;
-  else if (htmlIdx !== -1) startIdx = htmlIdx;
-  
-  if (startIdx > 0) text = text.substring(startIdx);
-
-  return text;
 }

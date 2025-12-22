@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 import React, { useState, useEffect } from 'react';
-import { XMarkIcon, ChatBubbleBottomCenterTextIcon, AcademicCapIcon, AdjustmentsHorizontalIcon, ArrowPathIcon, CheckIcon, CpuChipIcon, ShieldCheckIcon } from '@heroicons/react/24/outline';
+import { XMarkIcon, ChatBubbleBottomCenterTextIcon, AcademicCapIcon, AdjustmentsHorizontalIcon, ArrowPathIcon, CheckIcon, CpuChipIcon, ShieldCheckIcon, EyeIcon } from '@heroicons/react/24/outline';
 
 export type LivePromptMode = 'witty' | 'professional' | 'custom';
 export type Provider = 'gemini' | 'openrouter';
@@ -49,7 +49,7 @@ interface SettingsModalProps {
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings, onUpdateSettings }) => {
-    const [orModels, setOrModels] = useState<{ id: string, name: string }[]>([]);
+    const [orModels, setOrModels] = useState<{ id: string, name: string, isMultimodal: boolean }[]>([]);
     const [isFetchingOr, setIsFetchingOr] = useState(false);
     const [orError, setOrError] = useState<string | null>(null);
     const [isValidated, setIsValidated] = useState(false);
@@ -85,14 +85,37 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, s
             }
 
             const data = await response.json();
-            const models = data.data.map((m: any) => ({
-                id: m.id,
-                name: m.name || m.id
-            })).sort((a: any, b: any) => a.name.localeCompare(b.name));
+            
+            // Filter and process models
+            const models = data.data
+                .filter((m: any) => {
+                    const id = m.id.toLowerCase();
+                    const name = (m.name || "").toLowerCase();
+                    const description = (m.description || "").toLowerCase();
+                    
+                    // Check for multimodal/vision modality in OpenRouter's metadata
+                    // OpenRouter models often have 'multimodal' or 'image' tags/modality descriptions
+                    const hasVisionModality = m.modality && m.modality.includes('image');
+                    const hasArchitectureModality = m.architecture?.modality && m.architecture.modality.includes('multimodal');
+                    
+                    // Fallback to keyword matching for robust detection
+                    const keywords = ['vision', 'multimodal', 'vl', 'llava', 'pixtral', 'phi-3-vision', 'gpt-4o', 'gemini-1.5', 'claude-3'];
+                    const matchesKeyword = keywords.some(k => id.includes(k) || name.includes(k) || description.includes(k));
+                    
+                    return hasVisionModality || hasArchitectureModality || matchesKeyword;
+                })
+                .map((m: any) => ({
+                    id: m.id,
+                    name: m.name || m.id,
+                    isMultimodal: true
+                }))
+                .sort((a: any, b: any) => a.name.localeCompare(b.name));
 
             setOrModels(models);
             setIsValidated(true);
-            if (models.length > 0 && !settings.openRouterModel) {
+            
+            // If the current setting is not in the list, set to first available multimodal model
+            if (models.length > 0 && (!settings.openRouterModel || !models.find(m => m.id === settings.openRouterModel))) {
                 handleChange('openRouterModel', models[0].id);
             }
         } catch (e: any) {
@@ -167,7 +190,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, s
                         <section className="space-y-4 animate-in fade-in duration-300">
                             <div className="flex flex-col gap-1">
                                 <h4 className="text-sm font-bold text-zinc-200">OpenRouter Configuration</h4>
-                                <p className="text-xs text-zinc-500">Access thousands of models via OpenRouter's proxy.</p>
+                                <p className="text-xs text-zinc-500">Access multimodal models via OpenRouter's proxy.</p>
                             </div>
                             
                             <div className="space-y-3">
@@ -191,31 +214,46 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, s
 
                                 <div>
                                     <div className="flex items-center justify-between mb-1.5">
-                                        <label className="text-xs font-medium text-zinc-400">Selected Model</label>
+                                        <div className="flex items-center gap-2">
+                                            <label className="text-xs font-medium text-zinc-400">Multimodal Models</label>
+                                            <div className="px-1.5 py-0.5 bg-zinc-800 border border-zinc-700 rounded-md flex items-center gap-1">
+                                                <EyeIcon className="w-2.5 h-2.5 text-blue-400" />
+                                                <span className="text-[9px] text-zinc-500 font-bold uppercase">{orModels.length} Found</span>
+                                            </div>
+                                        </div>
                                         <button 
                                             onClick={fetchOpenRouterModels}
                                             disabled={isFetchingOr || !settings.openRouterKey}
                                             className="text-[10px] font-bold text-blue-400 hover:text-blue-300 disabled:text-zinc-600 flex items-center gap-1 uppercase tracking-tighter"
                                         >
                                             {isFetchingOr ? <ArrowPathIcon className="w-3 h-3 animate-spin" /> : <ArrowPathIcon className="w-3 h-3" />}
-                                            {isValidated ? 'Refresh Models' : 'Validate & Fetch Models'}
+                                            {isValidated ? 'Refresh' : 'Validate'}
                                         </button>
                                     </div>
-                                    <select 
-                                        value={settings.openRouterModel}
-                                        onChange={(e) => handleChange('openRouterModel', e.target.value)}
-                                        className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 max-h-40"
-                                    >
-                                        {orModels.length > 0 ? (
-                                            orModels.map(m => (
-                                                <option key={m.id} value={m.id}>{m.name}</option>
-                                            ))
-                                        ) : (
-                                            <option value={settings.openRouterModel || 'google/gemini-pro-1.5'}>{settings.openRouterModel || 'google/gemini-pro-1.5'}</option>
-                                        )}
-                                    </select>
+                                    <div className="relative group">
+                                        <select 
+                                            value={settings.openRouterModel}
+                                            onChange={(e) => handleChange('openRouterModel', e.target.value)}
+                                            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 appearance-none"
+                                        >
+                                            {orModels.length > 0 ? (
+                                                orModels.map(m => (
+                                                    <option key={m.id} value={m.id}>{m.name}</option>
+                                                ))
+                                            ) : (
+                                                <option value={settings.openRouterModel || 'google/gemini-flash-1.5'}>
+                                                    {settings.openRouterModel || 'google/gemini-flash-1.5'} (Default)
+                                                </option>
+                                            )}
+                                        </select>
+                                        <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-500">
+                                            <CpuChipIcon className="w-4 h-4" />
+                                        </div>
+                                    </div>
                                     {orError && <p className="mt-1 text-[10px] text-red-500 font-medium">{orError}</p>}
-                                    {isValidated && orModels.length > 0 && <p className="mt-1 text-[10px] text-emerald-500 font-medium flex items-center gap-1"><CheckIcon className="w-3 h-3" /> API Key Validated</p>}
+                                    {isValidated && orModels.length === 0 && !isFetchingOr && (
+                                        <p className="mt-1 text-[10px] text-amber-500 font-medium italic">No multimodal models detected. Try refreshing.</p>
+                                    )}
                                 </div>
                             </div>
                         </section>
