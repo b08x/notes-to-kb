@@ -333,8 +333,8 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
                  const doc = iframe.contentDocument;
                  if (!doc) return;
                  
-                 // If style editor is active, ensure content editable is OFF
-                 if (showStyleEditor) {
+                 // If style editor or live selection is active, ensure content editable is OFF
+                 if (showStyleEditor || isLive) {
                      doc.body.contentEditable = "false";
                      doc.body.classList.remove('editing-mode');
                      return;
@@ -354,14 +354,14 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
         // Try immediately and on load
         toggleEdit();
         iframe.onload = toggleEdit;
-    }, [isEditing, processedHtml, showStyleEditor]);
+    }, [isEditing, processedHtml, showStyleEditor, isLive]);
 
-    // Handle Style Editor Mode Toggling
+    // Handle Style Editor & Live Selection Mode Toggling
     useEffect(() => {
         const iframe = iframeRef.current;
         if (!iframe) return;
 
-        const setupStyleEditor = () => {
+        const setupSelectionOverlay = () => {
             const doc = iframe.contentDocument;
             if (!doc) return;
 
@@ -371,15 +371,37 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
                 if (style) style.remove();
                 doc.querySelectorAll('.kb-style-selected').forEach(el => el.classList.remove('kb-style-selected'));
                 doc.querySelectorAll('.kb-style-hover').forEach(el => el.classList.remove('kb-style-hover'));
+                doc.querySelectorAll('.kb-live-selected').forEach(el => el.classList.remove('kb-live-selected'));
             };
 
-            if (showStyleEditor) {
+            if (showStyleEditor || isLive) {
                 // Inject styles for selection/hover
                 const style = doc.createElement('style');
                 style.id = 'kb-style-editor-css';
                 style.textContent = `
+                    @keyframes kb-pulse-blue {
+                        0% { box-shadow: 0 0 0 0px rgba(59, 130, 246, 0.4); }
+                        70% { box-shadow: 0 0 0 10px rgba(59, 130, 246, 0); }
+                        100% { box-shadow: 0 0 0 0px rgba(59, 130, 246, 0); }
+                    }
+                    @keyframes kb-pulse-live {
+                        0% { box-shadow: 0 0 0 0px rgba(239, 68, 68, 0.4); }
+                        70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+                        100% { box-shadow: 0 0 0 0px rgba(239, 68, 68, 0); }
+                    }
                     .kb-style-hover { outline: 2px dashed #60a5fa !important; cursor: pointer !important; }
-                    .kb-style-selected { outline: 2px solid #3b82f6 !important; box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.2); }
+                    .kb-style-selected { 
+                        outline: 2px solid #3b82f6 !important; 
+                        box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.2); 
+                        animation: kb-pulse-blue 2s infinite;
+                    }
+                    /* Specialized Live Selection Indicator */
+                    .kb-live-selected {
+                        outline: 2px solid #ef4444 !important;
+                        box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.2);
+                        animation: kb-pulse-live 2s infinite;
+                    }
+                    .kb-style-hover.kb-live-hover { outline-color: #f87171 !important; }
                 `;
                 doc.head.appendChild(style);
 
@@ -395,7 +417,13 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
 
                     // Manage classes
                     doc.querySelectorAll('.kb-style-selected').forEach(el => el.classList.remove('kb-style-selected'));
-                    target.classList.add('kb-style-selected');
+                    doc.querySelectorAll('.kb-live-selected').forEach(el => el.classList.remove('kb-live-selected'));
+                    
+                    if (isLive) {
+                        target.classList.add('kb-live-selected');
+                    } else {
+                        target.classList.add('kb-style-selected');
+                    }
                     setSelectedEl(target);
                 };
 
@@ -403,11 +431,14 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
                     const target = e.target as HTMLElement;
                     if (target !== doc.body && target !== doc.documentElement) {
                         target.classList.add('kb-style-hover');
+                        if (isLive) target.classList.add('kb-live-hover');
                     }
                 };
 
                 const handleOut = (e: Event) => {
-                    (e.target as HTMLElement).classList.remove('kb-style-hover');
+                    const target = e.target as HTMLElement;
+                    target.classList.remove('kb-style-hover');
+                    target.classList.remove('kb-live-hover');
                 };
 
                 // Attach
@@ -430,11 +461,11 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
         let cleanupFn: (() => void) | undefined;
         // Run setup
         if (iframe.contentDocument && iframe.contentDocument.readyState === 'complete') {
-             cleanupFn = setupStyleEditor();
+             cleanupFn = setupSelectionOverlay();
         } else {
             iframe.onload = () => {
                 if (cleanupFn) cleanupFn();
-                cleanupFn = setupStyleEditor();
+                cleanupFn = setupSelectionOverlay();
             };
         }
 
@@ -442,7 +473,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
             if (cleanupFn) cleanupFn();
         };
 
-    }, [showStyleEditor, processedHtml]);
+    }, [showStyleEditor, isLive, processedHtml]);
 
     // Update style values when selected element changes
     useEffect(() => {
@@ -527,7 +558,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
         const doc = iframeRef.current.contentDocument;
         
         // 1. CLEANUP DOM
-        // Remove style editor specific elements
+        // Remove selection specific elements
         const editorStyle = doc.getElementById('kb-style-editor-css');
         if (editorStyle) editorStyle.remove();
         
@@ -540,6 +571,8 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
             node.classList.remove('editing-mode');
             node.classList.remove('kb-style-selected');
             node.classList.remove('kb-style-hover');
+            node.classList.remove('kb-live-selected');
+            node.classList.remove('kb-live-hover');
             // If class attribute is empty, remove it
             if (node.getAttribute('class') === '') node.removeAttribute('class');
             
@@ -632,7 +665,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
       <div className="h-14 flex items-center justify-between px-4 border-b border-zinc-800 bg-[#121214] shrink-0">
         <div className="flex items-center space-x-2">
             <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider">
-                {isLoading ? 'Compiling...' : (isEditing ? 'Text Edit Mode' : (showStyleEditor ? 'Style Mode' : 'Preview'))}
+                {isLoading ? 'Compiling...' : (isEditing ? 'Text Edit Mode' : (showStyleEditor ? 'Style Mode' : (isLive ? 'Live Connection' : 'Preview')))}
             </span>
             {creation && (
                 <span className="text-xs text-zinc-600 bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800">
