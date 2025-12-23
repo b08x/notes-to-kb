@@ -4,13 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 import React, { useCallback, useState, useEffect, useRef } from 'react';
-import { ArrowUpTrayIcon, SparklesIcon, CpuChipIcon, MicrophoneIcon, PaperAirplaneIcon, DocumentDuplicateIcon, ChevronDownIcon, BoltIcon, CloudArrowUpIcon } from '@heroicons/react/24/outline';
+import { ArrowUpTrayIcon, SparklesIcon, CpuChipIcon, MicrophoneIcon, PaperAirplaneIcon, DocumentDuplicateIcon, ChevronDownIcon, BoltIcon, CloudArrowUpIcon, Cog6ToothIcon } from '@heroicons/react/24/outline';
 
 interface InputAreaProps {
   onGenerate: (prompt: string, files?: File[], template?: string) => void;
   isGenerating: boolean;
+  onOpenSettings?: () => void;
   disabled?: boolean;
-  onStartLive?: () => void;
 }
 
 // --- Audio Feedback Utilities ---
@@ -98,7 +98,7 @@ const CyclingText = () => {
     );
 };
 
-export const InputArea: React.FC<InputAreaProps> = ({ onGenerate, isGenerating, disabled = false, onStartLive }) => {
+export const InputArea: React.FC<InputAreaProps> = ({ onGenerate, isGenerating, onOpenSettings, disabled = false }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [isListening, setIsListening] = useState(false);
@@ -315,6 +315,18 @@ export const InputArea: React.FC<InputAreaProps> = ({ onGenerate, isGenerating, 
             <ChevronDownIcon className="w-3 h-3 text-zinc-500 absolute right-4 pointer-events-none" />
          </div>
 
+         {/* Settings Shortcut */}
+         {onOpenSettings && (
+             <button 
+                onClick={onOpenSettings}
+                className="p-3 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors border-r border-zinc-800 pr-4"
+                title="Workspace Settings"
+                disabled={isGenerating}
+             >
+                <Cog6ToothIcon className="w-5 h-5" />
+             </button>
+         )}
+
          <button 
             onClick={toggleListening} 
             className={`p-3 rounded-lg hover:bg-zinc-800 transition-colors ${isListening ? 'text-red-500 animate-pulse bg-red-500/10' : 'text-zinc-400'}`}
@@ -323,16 +335,6 @@ export const InputArea: React.FC<InputAreaProps> = ({ onGenerate, isGenerating, 
          >
             <MicrophoneIcon className="w-5 h-5" />
          </button>
-
-         {onStartLive && (
-             <button
-                onClick={onStartLive}
-                className="p-3 rounded-lg hover:bg-purple-900/20 text-purple-400 transition-colors border border-transparent hover:border-purple-500/30"
-                title="Start Live Conversation"
-             >
-                 <BoltIcon className="w-5 h-5 animate-pulse" />
-             </button>
-         )}
 
          <input 
             type="text" 

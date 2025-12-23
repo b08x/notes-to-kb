@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 import React, { useEffect, useRef, useState } from 'react';
-import { XMarkIcon, MicrophoneIcon, BoltIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon, ArrowPathIcon, ExclamationTriangleIcon, KeyIcon } from '@heroicons/react/24/solid';
+import { XMarkIcon, MicrophoneIcon, BoltIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon, ArrowPathIcon, ExclamationTriangleIcon, KeyIcon, ChevronUpIcon, ChevronDownIcon } from '@heroicons/react/24/solid';
 import { LiveClient } from '../services/live-client';
 import { WITTY_PROMPT, PROFESSIONAL_PROMPT, LivePromptMode } from './SettingsModal';
 
@@ -14,7 +14,6 @@ interface LivePulseProps {
   currentHtml?: string;
   onUpdateHtml?: (html: string) => void;
   mode?: 'overlay' | 'panel';
-  onToggleMode?: () => void;
   liveConfig: { 
       model: string; 
       voice: string;
@@ -23,25 +22,21 @@ interface LivePulseProps {
   };
 }
 
-// Fix: Removed declare global for Window as it conflicted with existing environment types.
-// We use (window as any).aistudio to safely access the API.
-
 export const LivePulse: React.FC<LivePulseProps> = ({ 
     onClose, 
     isActive, 
     currentHtml, 
     onUpdateHtml, 
     mode = 'overlay', 
-    onToggleMode,
     liveConfig 
 }) => {
   const [volume, setVolume] = useState(0);
+  const [isExpanded, setIsExpanded] = useState(true);
   const [status, setStatus] = useState<'connecting' | 'active' | 'error' | 'key_required'>('connecting');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [transcription, setTranscription] = useState<{user: string, model: string}>({ user: '', model: '' });
   const clientRef = useRef<LiveClient | null>(null);
-  const retryCountRef = useRef(0);
-
+  
   const callbacksRef = useRef({ onUpdateHtml });
   useEffect(() => {
     callbacksRef.current = { onUpdateHtml };
@@ -54,8 +49,6 @@ export const LivePulse: React.FC<LivePulseProps> = ({
     setErrorMessage(null);
 
     try {
-        // High-tier model key selection check
-        // Fix: Use type assertion for aistudio access to satisfy TypeScript constraints
         const aiStudio = (window as any).aistudio;
         if (aiStudio) {
             const hasKey = await aiStudio.hasSelectedApiKey();
@@ -77,14 +70,12 @@ export const LivePulse: React.FC<LivePulseProps> = ({
                 onToolCall: (newHtml) => {
                     if (callbacksRef.current.onUpdateHtml) callbacksRef.current.onUpdateHtml(newHtml);
                 },
-                onVolume: (vol) => setVolume(prev => prev * 0.8 + vol * 0.2),
+                onVolume: (vol) => setVolume(prev => prev * 0.7 + vol * 0.3),
                 onTranscription: (text, source) => {
                     setTranscription(prev => {
                         if (source === 'user') {
-                            if (prev.model) return { user: text, model: '' };
-                            return { user: prev.user + text, model: '' };
+                            return { user: text, model: '' };
                         } else {
-                            if (prev.user) return { user: '', model: text };
                             return { user: '', model: prev.model + text };
                         }
                     });
@@ -105,7 +96,7 @@ export const LivePulse: React.FC<LivePulseProps> = ({
         await client.connect(() => {
             if (status !== 'error' && status !== 'key_required') {
                 setStatus('error');
-                setErrorMessage("Session ended unexpectedly.");
+                setErrorMessage("Session ended.");
             }
         }, {
             model: liveConfig.model,
@@ -114,24 +105,20 @@ export const LivePulse: React.FC<LivePulseProps> = ({
         });
         
         setStatus('active');
-        retryCountRef.current = 0;
     } catch (e: any) {
-        console.error("Failed to start live session", e);
-        if (e.message?.toLowerCase().includes("not found") || e.message?.toLowerCase().includes("permission")) {
+        if (e.message?.toLowerCase().includes("not found")) {
             setStatus('key_required');
         } else {
             setStatus('error');
-            setErrorMessage(e.message || "Failed to establish secure connection.");
+            setErrorMessage(e.message || "Connection failed.");
         }
     }
   };
 
   const handleOpenKeySelector = async () => {
-      // Fix: Use type assertion for aistudio access to satisfy TypeScript constraints
       const aiStudio = (window as any).aistudio;
       if (aiStudio) {
           await aiStudio.openSelectKey();
-          // Assume success after trigger as per instructions
           initSession();
       }
   };
@@ -149,152 +136,131 @@ export const LivePulse: React.FC<LivePulseProps> = ({
     };
   }, [isActive, liveConfig]); 
 
-  const handleRetry = () => {
-      if (clientRef.current) {
-          clientRef.current.stop();
-          clientRef.current = null;
-      }
-      retryCountRef.current++;
-      initSession();
-  };
-
   if (!isActive) return null;
-
-  const isPanel = mode === 'panel';
-
-  const getStatusText = () => {
-      switch (status) {
-          case 'connecting': return 'Securing Handshake...';
-          case 'active': return 'Live Assistant Ready';
-          case 'error': return 'Connection Interrupted';
-          case 'key_required': return 'API Key Selection Required';
-          default: return '';
-      }
-  };
 
   return (
     <div className={`
-        relative w-full h-full flex flex-col overflow-hidden transition-all duration-300
-        ${isPanel ? 'bg-[#09090b]' : 'bg-[#121214]/95 backdrop-blur-md rounded-2xl border border-zinc-700/50 shadow-2xl'}
+        fixed top-[100px] right-6 z-[150] flex flex-col items-end gap-3 transition-all duration-500
+        ${isExpanded ? 'w-[320px] sm:w-[380px]' : 'w-14 h-14'}
     `}>
-        {isPanel && (
-             <div className="absolute inset-0 overflow-hidden pointer-events-none">
-                <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 rounded-full blur-3xl transition-colors duration-1000 ${status === 'active' ? 'bg-blue-500/10' : (status === 'error' || status === 'key_required' ? 'bg-red-500/5' : 'bg-yellow-500/5')} opacity-50 animate-pulse`}></div>
+        {/* Main Floating Card */}
+        <div className={`
+            relative w-full flex flex-col overflow-hidden bg-[#121214]/90 backdrop-blur-xl rounded-2xl border border-zinc-700/50 shadow-2xl transition-all duration-500
+            ${isExpanded ? 'h-[240px] opacity-100' : 'h-0 opacity-0 pointer-events-none'}
+        `}>
+            {/* Glassy Background Pulse */}
+            <div className={`absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 via-purple-500 to-blue-500 animate-[gradient_3s_linear_infinite] transition-opacity duration-500 ${status === 'active' ? 'opacity-100' : 'opacity-20'}`}></div>
+
+            <div className="flex items-center justify-between p-3 border-b border-white/5 bg-black/20">
+                <div className="flex items-center gap-2">
+                    <div className="relative">
+                        <div className={`w-2 h-2 rounded-full transition-all duration-500 ${
+                            status === 'active' ? 'bg-emerald-500' : 
+                            (status === 'error' || status === 'key_required' ? 'bg-red-500' : 'bg-amber-400 animate-pulse')
+                        }`}></div>
+                        {status === 'active' && <div className="absolute inset-0 w-2 h-2 bg-emerald-400 rounded-full animate-ping opacity-20"></div>}
+                    </div>
+                    <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Live Pulse Assistant</span>
+                </div>
+                <div className="flex items-center gap-1">
+                    <button onClick={() => setIsExpanded(false)} className="p-1.5 text-zinc-500 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors">
+                        <ChevronDownIcon className="w-4 h-4" />
+                    </button>
+                    <button onClick={onClose} className="p-1.5 text-zinc-500 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors">
+                        <XMarkIcon className="w-4 h-4" />
+                    </button>
+                </div>
             </div>
-        )}
 
-        <div className={`flex items-center justify-between z-20 ${isPanel ? 'absolute top-6 left-6 right-6' : 'p-3 border-b border-white/5'}`}>
-             <div className="flex items-center gap-3">
-                 <div className="relative">
-                    <div className={`w-2.5 h-2.5 rounded-full transition-all duration-500 ${
-                        status === 'active' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]' : 
-                        (status === 'error' || status === 'key_required' ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]' : 'bg-amber-400 animate-ping shadow-[0_0_8px_rgba(251,191,36,0.8)]')
-                    }`}></div>
-                    {status === 'active' && <div className="absolute inset-0 w-2.5 h-2.5 bg-emerald-400 rounded-full animate-ping opacity-20"></div>}
-                 </div>
-                 
-                 <div className="flex flex-col">
-                    <span className={`text-[10px] font-mono uppercase tracking-widest ${
-                        status === 'active' ? 'text-emerald-400' : (status === 'error' || status === 'key_required' ? 'text-red-400' : 'text-amber-400')
-                    }`}>
-                        {getStatusText()}
-                    </span>
-                 </div>
-             </div>
-
-             <div className="flex items-center gap-2">
-                 {(status === 'error' || status === 'key_required') && (
-                     <button
-                        onClick={status === 'key_required' ? handleOpenKeySelector : handleRetry}
-                        className="flex items-center gap-1.5 px-2 py-1 text-[10px] font-bold text-zinc-300 hover:text-white bg-zinc-800 rounded-md border border-zinc-700 hover:border-zinc-500 transition-all"
-                     >
-                         {status === 'key_required' ? <KeyIcon className="w-3 h-3" /> : <ArrowPathIcon className="w-3 h-3" />}
-                         {status === 'key_required' ? 'Select API Key' : 'Retry'}
-                     </button>
-                 )}
-                 {onToggleMode && (
-                     <button
-                        onClick={onToggleMode}
-                        className="p-1.5 text-zinc-500 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
-                     >
-                         {isPanel ? <ArrowsPointingInIcon className="w-5 h-5" /> : <ArrowsPointingOutIcon className="w-4 h-4" />}
-                     </button>
-                 )}
-                <button onClick={onClose} className="p-1.5 text-zinc-500 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors">
-                    <XMarkIcon className={isPanel ? "w-6 h-6" : "w-4 h-4"} />
-                </button>
-             </div>
-        </div>
-
-        <div className={`flex flex-col items-center justify-center flex-1 z-10 ${isPanel ? 'px-8' : 'px-4 py-2'}`}>
-            <div className={`relative flex flex-col items-center justify-center transition-all duration-300 w-full ${isPanel ? 'max-w-3xl space-y-8' : 'space-y-2'}`}>
+            <div className="flex-1 p-4 flex flex-col justify-center">
                 {status === 'error' ? (
-                    <div className="flex flex-col items-center gap-4 animate-in zoom-in-95 duration-300">
-                        <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center border border-red-500/20">
-                            <ExclamationTriangleIcon className="w-8 h-8 text-red-500" />
-                        </div>
-                        <p className="text-zinc-500 text-sm max-w-xs text-center">{errorMessage || "Network error: Connection failed."}</p>
+                    <div className="flex flex-col items-center text-center gap-3">
+                        <ExclamationTriangleIcon className="w-8 h-8 text-red-500" />
+                        <p className="text-zinc-500 text-xs">{errorMessage || "Connection lost."}</p>
+                        <button onClick={() => initSession()} className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-white text-[10px] font-bold rounded-lg border border-zinc-700 transition-all uppercase">Retry</button>
                     </div>
                 ) : status === 'key_required' ? (
-                    <div className="flex flex-col items-center gap-4 animate-in zoom-in-95 duration-300">
-                        <div className="w-16 h-16 rounded-full bg-blue-500/10 flex items-center justify-center border border-blue-500/20">
-                            <KeyIcon className="w-8 h-8 text-blue-500" />
-                        </div>
-                        <div className="text-center space-y-2">
-                            <p className="text-zinc-200 text-sm font-bold">Paid API Key Required</p>
-                            <p className="text-zinc-500 text-xs max-w-xs leading-relaxed">High-tier native audio models require an API key from a project with billing enabled. Visit <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" className="text-blue-400 hover:underline">ai.google.dev/gemini-api/docs/billing</a> for more info.</p>
-                        </div>
+                    <div className="flex flex-col items-center text-center gap-2">
+                        <KeyIcon className="w-8 h-8 text-blue-500" />
+                        <p className="text-zinc-200 text-[10px] font-bold uppercase">Paid API Key Required</p>
+                        <button onClick={handleOpenKeySelector} className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold rounded-lg transition-all uppercase">Select Key</button>
                     </div>
                 ) : (
-                    <>
-                        {/* Audio Visualization */}
-                        <div className={`flex items-center justify-center gap-1 w-full ${isPanel ? 'h-32' : 'h-10'}`}>
-                            {[...Array(isPanel ? 40 : 15)].map((_, i) => (
+                    <div className="space-y-4">
+                        {/* Audio Pulse visualization */}
+                        <div className="flex items-center justify-center gap-1 h-8">
+                            {[...Array(20)].map((_, i) => (
                                 <div 
                                     key={i}
                                     className="w-1 bg-blue-500 rounded-full transition-all duration-75"
                                     style={{ 
-                                        height: status === 'connecting' ? '10%' : `${10 + (volume * 100 * (1 + Math.sin(i * 0.5)))}%`,
-                                        opacity: status === 'connecting' ? 0.2 : 0.6 + (volume * 0.4)
+                                        height: status === 'connecting' ? '15%' : `${15 + (volume * 100 * (1 + Math.sin(i * 0.8)))}%`,
+                                        opacity: 0.4 + (volume * 0.6)
                                     }}
                                 ></div>
                             ))}
                         </div>
 
-                        {/* Transcriptions */}
-                        <div className={`w-full max-w-2xl bg-black/20 rounded-xl p-4 border border-white/5 transition-opacity duration-500 ${isPanel ? 'opacity-100 min-h-[100px]' : 'opacity-80 text-center'}`}>
-                             {transcription.user && (
-                                 <div className="flex gap-3 animate-in slide-in-from-bottom-2 duration-300">
-                                     <div className="w-6 h-6 rounded-full bg-zinc-800 flex-shrink-0 flex items-center justify-center">
-                                         <MicrophoneIcon className="w-3.5 h-3.5 text-zinc-500" />
-                                     </div>
-                                     <p className="text-sm text-zinc-300 font-medium italic leading-relaxed">"{transcription.user}"</p>
-                                 </div>
-                             )}
-                             {transcription.model && (
-                                 <div className="flex gap-3 animate-in slide-in-from-bottom-2 duration-300">
-                                     <div className="w-6 h-6 rounded-full bg-blue-600 flex-shrink-0 flex items-center justify-center">
-                                         <BoltIcon className="w-3.5 h-3.5 text-white" />
-                                     </div>
-                                     <p className="text-sm text-blue-200 font-medium leading-relaxed">{transcription.model}</p>
-                                 </div>
-                             )}
-                             {!transcription.user && !transcription.model && (
-                                 <div className="flex items-center justify-center h-full text-zinc-600 text-xs italic tracking-wide">
-                                     {status === 'active' ? "Speak to the assistant to edit the document..." : "Waiting for connection..."}
-                                 </div>
-                             )}
+                        {/* Transcription Bubble */}
+                        <div className="bg-black/40 rounded-xl p-3 border border-white/5 min-h-[60px] flex flex-col justify-center shadow-inner">
+                            {transcription.user && (
+                                <div className="animate-in fade-in slide-in-from-bottom-1 duration-300">
+                                    <p className="text-[11px] text-zinc-400 font-medium italic">"{transcription.user}"</p>
+                                </div>
+                            )}
+                            {transcription.model && (
+                                <div className="animate-in fade-in slide-in-from-bottom-1 duration-300">
+                                    <p className="text-[11px] text-blue-200 font-bold leading-relaxed">{transcription.model}</p>
+                                </div>
+                            )}
+                            {!transcription.user && !transcription.model && (
+                                <p className="text-[10px] text-zinc-600 text-center italic tracking-wide">Assistant is listening...</p>
+                            )}
                         </div>
-                    </>
+                    </div>
                 )}
             </div>
-        </div>
-        
-        {!isPanel && (
-            <div className="px-4 py-2 bg-blue-500/5 text-[9px] text-zinc-500 text-center border-t border-white/5 uppercase tracking-tighter">
-                Gemini 2.5 Native Audio Engine
+            
+            <div className="px-4 py-2 bg-black/40 border-t border-white/5 flex items-center justify-between">
+                <span className="text-[8px] text-zinc-600 uppercase font-mono">{liveConfig.voice} Voice Engine</span>
+                <div className="flex gap-2">
+                    <div className={`w-1.5 h-1.5 rounded-full ${status === 'active' ? 'bg-emerald-500' : 'bg-zinc-700'}`}></div>
+                </div>
             </div>
-        )}
+        </div>
+
+        {/* Minimized Orb Button */}
+        <button 
+            onClick={() => setIsExpanded(true)}
+            className={`
+                group relative flex items-center justify-center rounded-full transition-all duration-500 shadow-2xl
+                ${isExpanded ? 'scale-0 w-0 h-0 opacity-0' : 'scale-100 w-14 h-14 opacity-100 bg-blue-600 hover:bg-blue-500'}
+            `}
+        >
+            <div className={`absolute inset-0 rounded-full border-4 border-white/10 ${status === 'active' ? 'animate-ping opacity-20' : ''}`}></div>
+            <div className={`absolute inset-0 rounded-full bg-blue-400 blur-xl opacity-0 group-hover:opacity-40 transition-opacity duration-300`}></div>
+            <BoltIcon className="w-6 h-6 text-white relative z-10" />
+            
+            {/* Discrete Volume Ring */}
+            <svg className="absolute inset-0 w-full h-full -rotate-90 pointer-events-none">
+                <circle 
+                    cx="28" cy="28" r="24" 
+                    fill="none" 
+                    stroke="white" 
+                    strokeWidth="2" 
+                    strokeDasharray="150.8" 
+                    strokeDashoffset={150.8 - (150.8 * volume * 2)}
+                    className="transition-all duration-75 opacity-30"
+                />
+            </svg>
+        </button>
+
+        <style>{`
+            @keyframes gradient {
+                0% { background-position: 0% 50%; }
+                100% { background-position: 100% 50%; }
+            }
+        `}</style>
     </div>
   );
 };

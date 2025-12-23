@@ -1,5 +1,5 @@
 {
-  "name": "Notes to KB",
+  "name": "AI KB Doc Assistant",
   "description": "Upload notes, screenshots, or documents to assist with the generation of structured Knowledge Base articles.",
   "requestFramePermissions": [
     "microphone"

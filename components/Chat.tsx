@@ -26,7 +26,6 @@ interface ChatProps {
   isGenerating: boolean;
   onSelectArtifact: (creation: Creation) => void;
   activeArtifactId?: string;
-  onStartLive?: () => void;
   isLive?: boolean;
 }
 
@@ -36,7 +35,6 @@ export const Chat: React.FC<ChatProps> = ({
   isGenerating, 
   onSelectArtifact,
   activeArtifactId,
-  onStartLive,
   isLive
 }) => {
   const [isListening, setIsListening] = useState(false);
@@ -443,22 +441,6 @@ export const Chat: React.FC<ChatProps> = ({
           <div className="flex flex-wrap justify-center gap-3 mb-1 px-1 items-center min-h-[44px]">
              {!showImprovementMenu ? (
                  <>
-                    {/* Live Pulse - Toggle via App state */}
-                    {onStartLive && (
-                        <button
-                            onClick={onStartLive}
-                            className={`flex items-center gap-2 px-5 py-2.5 text-xs rounded-full border transition-all whitespace-nowrap font-bold uppercase tracking-tight ${
-                                isLive 
-                                ? 'bg-purple-600 text-white border-purple-400 shadow-[0_0_15px_rgba(168,85,247,0.4)]' 
-                                : 'bg-purple-600/20 hover:bg-purple-600/30 text-purple-200 border-purple-500/60 hover:border-purple-400'
-                            }`}
-                            title="Start Live Voice Session: Talk to the assistant to edit the document in real-time."
-                        >
-                            <BoltIcon className={`w-4 h-4 ${isLive ? 'animate-pulse' : ''}`} />
-                            <span>Live Pulse</span>
-                        </button>
-                    )}
-
                     {/* Add Context - Purple (Order: 1) */}
                     <button
                         onClick={() => setShowAddContextDialog(true)}

@@ -33,7 +33,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
                     
                     {/* Intro */}
                     <section>
-                        <h4 className="text-xl font-bold text-white mb-2">Welcome to Notes to KB</h4>
+                        <h4 className="text-xl font-bold text-white mb-2">Welcome to AI KB Doc Assistant</h4>
                         <p className="text-sm leading-relaxed text-zinc-400">
                             This application is an AI-powered workspace designed to transform raw notes, screenshots, and documents into structured Knowledge Base (KB) articles. It combines Gemini's multimodal capabilities with a rich editing environment.
                         </p>

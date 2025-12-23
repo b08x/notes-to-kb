@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -30,7 +31,6 @@ interface LivePreviewProps {
   imageMap?: Record<string, string>;
   onUpdateArtifact?: (id: string, html: string) => void;
   isLive?: boolean;
-  onToggleLive?: () => void;
 }
 
 declare global {
@@ -125,7 +125,7 @@ const PdfRenderer = ({ dataUrl }: { dataUrl: string }) => {
   );
 };
 
-export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, loadingMessage, streamSize = 0, className = "", imageMap = {}, onUpdateArtifact, isLive, onToggleLive }) => {
+export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, loadingMessage, streamSize = 0, className = "", imageMap = {}, onUpdateArtifact, isLive }) => {
     const [isExporting, setIsExporting] = useState<'docx' | 'pdf' | null>(null);
     const [isEditing, setIsEditing] = useState(false);
     const [showStyleEditor, setShowStyleEditor] = useState(false);
@@ -247,21 +247,6 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
                         <button onClick={handleSaveEdit} className="flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-md transition-all whitespace-nowrap"><CheckIcon className="w-3 h-3" /> Save</button>
                         <button onClick={() => { setIsEditing(false); setShowStyleEditor(false); }} className="text-[10px] font-bold text-zinc-500 hover:text-white px-2 whitespace-nowrap">Cancel</button>
                     </>
-                )}
-                
-                {onToggleLive && (
-                    <button 
-                        onClick={onToggleLive}
-                        className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-bold rounded-md transition-all border whitespace-nowrap ${
-                            isLive 
-                            ? 'bg-purple-600/20 text-purple-400 border-purple-500/50 shadow-[0_0_10px_rgba(168,85,247,0.2)]' 
-                            : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:border-purple-500/30'
-                        }`}
-                        title="Live Pulse Voice Assistant"
-                    >
-                        <BoltIcon className={`w-3 h-3 ${isLive ? 'animate-pulse' : ''}`} />
-                        Live Pulse
-                    </button>
                 )}
                 
                 <div className="w-px h-3 bg-zinc-800 mx-1 shrink-0"></div>
