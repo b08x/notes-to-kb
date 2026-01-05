@@ -14,7 +14,7 @@ import { LivePulse } from './components/LivePulse';
 import { SettingsModal, AppSettings } from './components/SettingsModal';
 import { HelpModal } from './components/HelpModal';
 import { AppOverview } from './components/AppOverview';
-import { Cog6ToothIcon } from '@heroicons/react/24/outline';
+import { SessionConfigView } from './components/SessionConfigView';
 
 interface ProjectData extends ProjectSummary {
     messages: Message[];
@@ -40,10 +40,9 @@ const App: React.FC = () => {
   
   const [isLiveActive, setIsLiveActive] = useState(false);
   const livePulseRef = useRef<any>(null);
-  const previewRef = useRef<any>(null); // To potentially target the iframe more directly
   
-  const [showSettings, setShowSettings] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [appSettings, setAppSettings] = useState<AppSettings>({
       provider: 'gemini',
       enableLiveApi: true,
@@ -54,6 +53,9 @@ const App: React.FC = () => {
       generationModel: 'gemini-3-flash-preview',
       openRouterKey: '',
       openRouterModel: 'google/gemini-flash-1.5',
+      temperature: 0.2,
+      topP: 0.95,
+      thinkingBudget: 2048,
       voiceEngine: 'gemini',
       elevenLabsKey: '',
       elevenLabsVoiceId: '21m00Tcm4TlvDq8ikWAM'
@@ -129,9 +131,6 @@ const App: React.FC = () => {
   const handleAtomicUpdate = (toolName: string, args: any) => {
     if (!activeProject.activeCreation) return;
     
-    // Performance Optimization: Virtual DOM logic.
-    // Instead of re-parsing and re-rendering the whole artifact in React state,
-    // we send a postMessage to the Iframe's runtime to update specifically.
     const iframe = document.querySelector('iframe');
     if (iframe && iframe.contentWindow) {
         iframe.contentWindow.postMessage({
@@ -141,8 +140,6 @@ const App: React.FC = () => {
         }, '*');
     }
 
-    // Still sync to state to ensure exports and sidebar previews are correct, 
-    // but the Iframe won't flicker because processedHtml is memoized on creation.html
     const { id, html: currentHtml } = activeProject.activeCreation;
     const parser = new DOMParser();
     const doc = parser.parseFromString(currentHtml, 'text/html');
@@ -242,7 +239,12 @@ const App: React.FC = () => {
           (partialText) => setStreamSize(partialText.length),
           appSettings.provider === 'gemini' ? appSettings.generationModel : appSettings.openRouterModel,
           appSettings.provider,
-          appSettings.openRouterKey
+          appSettings.openRouterKey,
+          {
+            temperature: appSettings.temperature,
+            topP: appSettings.topP,
+            thinkingBudget: appSettings.thinkingBudget
+          }
       );
       
       const newArtifact: Creation = {
@@ -287,62 +289,28 @@ const App: React.FC = () => {
 
   return (
     <div className="flex h-screen w-full bg-[#09090b] text-zinc-100 overflow-hidden font-sans">
-      {!isInitialState && (
-          <div className="animate-in slide-in-from-left duration-300">
-            <Sidebar 
-                projects={projects}
-                activeProjectId={activeProjectId}
-                onSelectProject={setActiveProjectId}
-                onNewProject={handleNewProject}
-                onDeleteProject={handleDeleteProject}
-                onOpenSettings={() => setShowSettings(true)}
-                onOpenHelp={() => setShowHelp(true)}
-                artifacts={currentArtifacts}
-                onSelectArtifact={(c) => updateActiveProject(p => ({ ...p, activeCreation: c }))}
-                activeArtifactId={activeProject.activeCreation?.id}
-            />
-          </div>
-      )}
+      <Sidebar 
+          projects={projects}
+          activeProjectId={activeProjectId}
+          onSelectProject={setActiveProjectId}
+          onNewProject={handleNewProject}
+          onDeleteProject={handleDeleteProject}
+          onOpenHelp={() => setShowHelp(true)}
+          onOpenSettings={() => setShowSettings(true)}
+          artifacts={currentArtifacts}
+          onSelectArtifact={(c) => updateActiveProject(p => ({ ...p, activeCreation: c }))}
+          activeArtifactId={activeProject.activeCreation?.id}
+      />
       
-      <main className="flex-1 flex flex-col min-w-0 relative">
-        {isInitialState && (
-            <button 
-                onClick={() => setShowSettings(true)}
-                className="absolute top-6 right-6 z-50 flex items-center gap-2 px-4 py-2 bg-zinc-900/50 backdrop-blur-md border border-zinc-800 hover:border-zinc-600 rounded-full text-zinc-400 hover:text-white transition-all shadow-xl"
-            >
-                <Cog6ToothIcon className="w-5 h-5" />
-                <span className="text-xs font-bold uppercase tracking-tight">Session Config</span>
-            </button>
-        )}
-
-        <div className={`flex-1 flex min-w-0 flex-col md:flex-row h-full`}>
-          <div className="flex-1 flex flex-col h-full min-w-0">
-             {isInitialState ? (
-                 <div className="flex-1 flex items-center justify-center p-6 sm:p-12 bg-[#09090b] md:border-r border-zinc-800 animate-in fade-in duration-500 overflow-y-auto">
-                    <div className="w-full max-w-2xl py-8">
-                        <InputArea 
-                            onGenerate={handleSendMessage} 
-                            isGenerating={isGenerating} 
-                            onOpenSettings={() => setShowSettings(true)}
-                        />
-                    </div>
-                 </div>
-             ) : (
-                 <LivePreview 
-                    creation={activeProject.activeCreation}
-                    isLoading={isGenerating}
-                    loadingMessage={generationStatus}
-                    streamSize={streamSize}
-                    imageMap={activeProject.imageMap}
-                    onUpdateArtifact={handleUpdateArtifact}
-                    isLive={isLiveActive}
-                 />
-             )}
-          </div>
-          
-          <div className={`w-full md:w-[420px] border-l border-zinc-800 h-full ${isInitialState ? 'hidden md:block' : ''}`}>
-             {isInitialState ? (
-                <div className="h-full border-t md:border-t-0 md:border-l border-zinc-800"><AppOverview /></div>
+      <div className="flex-1 flex overflow-hidden">
+        <div className="w-full md:w-[450px] border-r border-zinc-800 flex flex-col h-full bg-[#0c0c0e] shrink-0">
+            {isInitialState ? (
+                <SessionConfigView 
+                    settings={appSettings} 
+                    onUpdateSettings={setAppSettings} 
+                    onStart={(prompt, files, template) => handleSendMessage(prompt, files, 'source', template)}
+                    isGenerating={isGenerating}
+                />
             ) : (
                 <Chat 
                     messages={activeProject.messages}
@@ -353,9 +321,24 @@ const App: React.FC = () => {
                     isLive={isLiveActive}
                 />
             )}
-          </div>
         </div>
-      </main>
+
+        <div className="flex-1 h-full bg-[#09090b] overflow-hidden">
+             {isInitialState ? (
+                <AppOverview />
+             ) : (
+                <LivePreview 
+                    creation={activeProject.activeCreation}
+                    isLoading={isGenerating}
+                    loadingMessage={generationStatus}
+                    streamSize={streamSize}
+                    imageMap={activeProject.imageMap}
+                    onUpdateArtifact={handleUpdateArtifact}
+                    isLive={isLiveActive}
+                />
+             )}
+        </div>
+      </div>
 
       <LivePulse 
           ref={livePulseRef}
@@ -379,8 +362,8 @@ const App: React.FC = () => {
           }}
       />
 
-      <SettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} settings={appSettings} onUpdateSettings={setAppSettings} />
       <HelpModal isOpen={showHelp} onClose={() => setShowHelp(false)} />
+      <SettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} settings={appSettings} onUpdateSettings={setAppSettings} />
     </div>
   );
 };

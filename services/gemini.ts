@@ -19,6 +19,12 @@ export interface Attachment {
     extractedText?: string; // Content of text-based files like PDFs
 }
 
+export interface GenConfig {
+    temperature?: number;
+    topP?: number;
+    thinkingBudget?: number;
+}
+
 /**
  * Parses complex API error responses into human-readable strings.
  */
@@ -29,7 +35,6 @@ function parseError(error: any): string {
 
     try {
         const message = error.message || "";
-        // Gemini SDK often wraps JSON in a string
         if (message.includes("{") && message.includes("}")) {
             const start = message.indexOf("{");
             const end = message.lastIndexOf("}");
@@ -44,36 +49,21 @@ function parseError(error: any): string {
             if (apiError.message) return apiError.message;
         }
     } catch (e) {
-        // Fallback to raw message
     }
     
     return error.message || "An unexpected error occurred during generation.";
 }
 
-/**
- * Resolves the appropriate model name based on user input and task type.
- */
 function resolveModelName(modelName: string, provider: 'gemini' | 'openrouter'): string {
     if (provider === 'openrouter') return modelName || 'google/gemini-flash-1.5';
-
     const name = modelName.toLowerCase();
-    
-    // Check if it's already a full model name (e.g., gemini-1.5-flash)
-    if (name.includes('gemini-') && name.split('-').length > 2) {
-        return modelName;
-    }
-
-    // Existing Alias Logic
+    if (name.includes('gemini-') && name.split('-').length > 2) return modelName;
     if (name.includes('gemini flash') || name.includes('flash lite')) return 'gemini-flash-lite-latest';
     if (name.includes('gemini-3-flash')) return 'gemini-3-flash-preview';
     if (name.includes('gemini-3-pro')) return 'gemini-3-pro-preview';
-    
     return modelName || 'gemini-3-flash-preview';
 }
 
-/**
- * Helper to call a function with exponential backoff retry.
- */
 async function withRetry<T>(fn: () => Promise<T>, maxRetries = 2): Promise<T> {
     let lastError: any;
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -82,14 +72,8 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries = 2): Promise<T> {
         } catch (error: any) {
             lastError = error;
             const message = error.message || "";
-            // Only retry on network errors or 429s
-            const isRetryable = message.includes("429") || 
-                                message.includes("RESOURCE_EXHAUSTED") || 
-                                message.includes("Failed to fetch");
-            
+            const isRetryable = message.includes("429") || message.includes("RESOURCE_EXHAUSTED") || message.includes("Failed to fetch");
             if (!isRetryable || attempt === maxRetries) break;
-            
-            // Exponential backoff: 1s, 2s, 4s...
             const delay = Math.pow(2, attempt) * 1000;
             await new Promise(r => setTimeout(r, delay));
         }
@@ -105,7 +89,8 @@ export async function bringToLife(
     onChunk?: (text: string) => void,
     modelName: string = 'gemini-3-flash-preview',
     provider: 'gemini' | 'openrouter' = 'gemini',
-    apiKey?: string
+    apiKey?: string,
+    genConfig: GenConfig = {}
 ): Promise<string> {
     const effectiveModel = resolveModelName(modelName, provider);
     const contextString = (history.map(h => h.text).join(" ") + " " + currentPrompt).toLowerCase();
@@ -156,7 +141,13 @@ export async function bringToLife(
                 const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
                     method: "POST",
                     headers: { "Authorization": `Bearer ${sanitizedKey}`, "Content-Type": "application/json" },
-                    body: JSON.stringify({ model: effectiveModel, messages, stream: true, temperature: 0.2 })
+                    body: JSON.stringify({ 
+                        model: effectiveModel, 
+                        messages, 
+                        stream: true, 
+                        temperature: genConfig.temperature ?? 0.2,
+                        top_p: genConfig.topP ?? 0.95
+                    })
                 });
 
                 if (!response.ok) throw new Error(await response.text());
@@ -201,10 +192,21 @@ export async function bringToLife(
                 parts.push({ text: authoritativePrompt });
                 attachments.forEach(att => parts.push({ inlineData: { data: att.data, mimeType: att.mimeType } }));
 
+                const config: any = { 
+                    systemInstruction, 
+                    temperature: genConfig.temperature ?? 0.2,
+                    topP: genConfig.topP ?? 0.95
+                };
+
+                // Apply thinking budget only to supported models
+                if (effectiveModel.includes('gemini-3') || effectiveModel.includes('gemini-2.5')) {
+                    config.thinkingConfig = { thinkingBudget: genConfig.thinkingBudget ?? 2048 };
+                }
+
                 const stream = await ai.models.generateContentStream({
                   model: effectiveModel,
                   contents: { parts },
-                  config: { systemInstruction, temperature: 0.2 }
+                  config
                 });
 
                 for await (const chunk of stream) {
