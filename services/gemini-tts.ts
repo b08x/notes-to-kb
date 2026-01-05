@@ -27,6 +27,11 @@ export class GeminiNativeTTS {
     }
   }
 
+  public async prewarm() {
+    // Gemini Native TTS is request-based, no long-lived socket to warm.
+    return Promise.resolve();
+  }
+
   public async speak(text: string) {
     if (!text.trim()) return;
 
@@ -67,8 +72,6 @@ export class GeminiNativeTTS {
     }
 
     try {
-      // The API returns raw PCM data. We need to decode it.
-      // However, the helper functions for standard PCM decoding are required here.
       const binaryString = atob(base64);
       const len = binaryString.length;
       const bytes = new Uint8Array(len);
@@ -76,7 +79,6 @@ export class GeminiNativeTTS {
         bytes[i] = binaryString.charCodeAt(i);
       }
 
-      // Convert PCM16 to Float32
       const dataInt16 = new Int16Array(bytes.buffer);
       const audioBuffer = this.audioContext.createBuffer(1, dataInt16.length, 24000);
       const channelData = audioBuffer.getChannelData(0);

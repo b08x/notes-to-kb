@@ -16,7 +16,7 @@ export class ElevenLabsTTS {
   private onVolumeCallback?: (vol: number) => void;
   private connectionPromise: Promise<void> | null = null;
   private isMonitoring = false;
-  private isFinishing = false;
+  private lastActivityTime = 0;
 
   constructor(apiKey: string, voiceId: string = '21m00Tcm4TlvDq8ikWAM') {
     this.apiKey = apiKey;
@@ -30,8 +30,19 @@ export class ElevenLabsTTS {
       }
   }
 
+  /**
+   * Pre-warms the WebSocket connection so it's ready before the LLM starts streaming.
+   */
+  public async prewarm() {
+    try {
+        await this.initSocket();
+    } catch (e) {
+        console.error("ElevenLabs prewarm failed:", e);
+    }
+  }
+
   private async initSocket(): Promise<void> {
-    if (this.socket && this.socket.readyState === WebSocket.OPEN) return;
+    if (this.socket && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)) return;
     if (this.connectionPromise) return this.connectionPromise;
 
     this.connectionPromise = new Promise((resolve, reject) => {
@@ -43,15 +54,18 @@ export class ElevenLabsTTS {
 
       socket.onopen = () => {
         try {
-            // First message must contain API key and settings
+            // First message must contain API key and settings. 
+            // We send a space as a "no-op" text to initiate.
             socket.send(JSON.stringify({
               text: " ",
               voice_settings: { stability: 0.5, similarity_boost: 0.8 },
               xi_api_key: this.apiKey
             }));
+            this.lastActivityTime = Date.now();
             resolve();
         } catch (e) {
-            reject(new Error("Handshake failed."));
+            this.connectionPromise = null;
+            reject(new Error("ElevenLabs Handshake failed."));
         }
       };
 
@@ -62,10 +76,7 @@ export class ElevenLabsTTS {
                 await this.playBase64Audio(data.audio);
             }
             if (data.isFinal) {
-                // ElevenLabs has finished processing the input
-            }
-            if (data.message) {
-                console.warn("ElevenLabs Server Message:", data.message);
+                // ElevenLabs acknowledges stream completion
             }
         } catch (e) {
             console.error("Error parsing ElevenLabs message:", e);
@@ -73,15 +84,11 @@ export class ElevenLabsTTS {
       };
 
       socket.onerror = (err) => {
-          console.error("ElevenLabs WebSocket Error:", err);
           this.connectionPromise = null;
           reject(err);
       };
       
-      socket.onclose = (event) => { 
-          if (!event.wasClean) {
-              console.warn(`ElevenLabs WebSocket closed unexpectedly: ${event.code} ${event.reason}`);
-          }
+      socket.onclose = () => { 
           if (this.socket === socket) {
               this.socket = null; 
               this.connectionPromise = null;
@@ -93,19 +100,16 @@ export class ElevenLabsTTS {
     return this.connectionPromise;
   }
 
-  /**
-   * Sends text to ElevenLabs for conversion. 
-   * @param text The partial text chunk.
-   * @param isFinal If true, signals the end of the text sequence.
-   */
   public async speak(text: string, isFinal = false) {
     if (!text && !isFinal) return;
+    
+    // Manage activity to avoid 20s timeout by periodically sending heartbeats if needed,
+    // though usually speak() is called frequently during LLM streaming.
     this.textBuffer += text;
     
-    // We wait for a decent chunk of text or punctuation to trigger generation,
-    // unless it's the final chunk of a turn.
+    // We send smaller chunks to ElevenLabs to reduce perceived latency.
     const shouldTrigger = isFinal || 
-                         this.textBuffer.length > 15 || 
+                         this.textBuffer.length > 20 || 
                          /[.!?]/.test(text);
 
     if (!shouldTrigger) return;
@@ -118,9 +122,10 @@ export class ElevenLabsTTS {
                 try_trigger_generation: true
             }));
             this.textBuffer = "";
+            this.lastActivityTime = Date.now();
             
             if (isFinal) {
-                // Signal end of stream as per ElevenLabs docs
+                // Signal end of stream as per ElevenLabs docs to prevent timeout error
                 this.socket.send(JSON.stringify({ text: "" }));
             }
         }
@@ -129,11 +134,15 @@ export class ElevenLabsTTS {
     }
   }
 
-  /**
-   * Manually flush the buffer and signal end of sequence.
-   */
   public async flush() {
     await this.speak("", true);
+    // After flushing a turn, we optionally close the socket to be clean, 
+    // or keep it open if turns happen fast. Here we close to reset the 20s timer.
+    if (this.socket) {
+        this.socket.close();
+        this.socket = null;
+        this.connectionPromise = null;
+    }
   }
 
   private async playBase64Audio(base64: string) {
@@ -153,7 +162,6 @@ export class ElevenLabsTTS {
         const bytes = new Uint8Array(len);
         for (let i = 0; i < len; i++) bytes[i] = binaryString.charCodeAt(i);
         
-        // Use decodeAudioData which works for MP3 chunks in modern browsers
         const audioBuffer = await this.audioContext.decodeAudioData(bytes.buffer);
         const source = this.audioContext.createBufferSource();
         source.buffer = audioBuffer;
@@ -167,7 +175,6 @@ export class ElevenLabsTTS {
         this.sources.add(source);
         source.onended = () => this.sources.delete(source);
     } catch (e) {
-        // Log but don't crash; some chunks might be partial and fail to decode if headers are missing
         console.debug("Audio chunk decoding partial failure:", e);
     }
   }
@@ -193,6 +200,10 @@ export class ElevenLabsTTS {
     this.sources.clear();
     this.nextStartTime = 0;
     this.textBuffer = "";
+    if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+        this.socket.send(JSON.stringify({ text: "" }));
+        this.socket.close();
+    }
   }
 
   public stop() {

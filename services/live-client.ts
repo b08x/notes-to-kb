@@ -137,7 +137,6 @@ export class LiveClient {
   async connect(onClose: () => void, config: LiveConfig) {
     this.currentConfig = { ...config, model: this.sanitizeModel(config.model) };
     
-    // Performance Optimization: Cache context in systemInstruction for Gemini
     if (this.currentConfig.provider === 'gemini') {
         this.ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         this.chat = this.ai.chats.create({
@@ -149,7 +148,6 @@ export class LiveClient {
             }
         });
     } else {
-        // Init OpenRouter history with persistent context
         this.orHistory = [{ 
             role: 'system', 
             content: `${config.prompt}\n\nDOCUMENT_CONTEXT:\n${this.initialContext}` 
@@ -192,6 +190,12 @@ export class LiveClient {
             if (event.results[i].isFinal) finalTranscript += event.results[i][0].transcript;
             else interimTranscript += event.results[i][0].transcript;
         }
+        
+        // UX: Pre-warm TTS as soon as user finishes speaking, anticipating the turn.
+        if (finalTranscript && this.ttsService) {
+            this.ttsService.prewarm();
+        }
+
         if (interimTranscript) this.callbacks.onTranscription?.(interimTranscript, 'user');
         if (finalTranscript && !this.isProcessing) {
             if (this.ttsService) this.ttsService.stopAudio();
