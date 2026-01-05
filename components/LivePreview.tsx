@@ -13,7 +13,8 @@ import {
     SparklesIcon, 
     CheckCircleIcon,
     DocumentArrowDownIcon,
-    DocumentIcon
+    DocumentIcon,
+    ShieldCheckIcon
 } from '@heroicons/react/24/outline';
 import { Creation } from './CreationHistory';
 import { DocxGenerator } from '../lib/services/DocxGenerator';
@@ -27,6 +28,7 @@ interface LivePreviewProps {
   className?: string;
   imageMap?: Record<string, string>;
   onUpdateArtifact?: (id: string, html: string, isManualEdit: boolean) => void;
+  onStandardize?: () => void; // New: Trigger for ServiceNow compliance
   isLive?: boolean;
 }
 
@@ -122,7 +124,17 @@ const PdfRenderer = ({ dataUrl }: { dataUrl: string }) => {
   );
 };
 
-export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, loadingMessage, streamSize = 0, className = "", imageMap = {}, onUpdateArtifact, isLive }) => {
+export const LivePreview: React.FC<LivePreviewProps> = ({ 
+    creation, 
+    isLoading, 
+    loadingMessage, 
+    streamSize = 0, 
+    className = "", 
+    imageMap = {}, 
+    onUpdateArtifact,
+    onStandardize,
+    isLive 
+}) => {
     const [isExporting, setIsExporting] = useState<'docx' | 'pdf' | null>(null);
     const [isEditing, setIsEditing] = useState(false);
     const [showStyleEditor, setShowStyleEditor] = useState(false);
@@ -186,6 +198,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
                 padding: 100px 80px; 
                 background-color: #ffffff;
                 -webkit-font-smoothing: antialiased;
+                transition: padding 0.3s ease;
             }
             
             h1 { font-size: 3.5rem; font-weight: 800; color: #111827; letter-spacing: -0.04em; margin-bottom: 1rem; line-height: 1.1; }
@@ -226,7 +239,15 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
             td { padding: 18px 24px; border-bottom: 1px solid #f1f5f9; }
             tr:last-child td { border-bottom: none; }
             
-            [contenteditable="true"]:focus { outline: none; box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.25); border-radius: 8px; }
+            [contenteditable="true"] {
+                cursor: text;
+            }
+
+            [contenteditable="true"]:focus { 
+                outline: none; 
+                box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.15); 
+                border-radius: 4px; 
+            }
             
             @keyframes glowPulse {
                 0% { background-color: rgba(52, 211, 153, 0.0); }
@@ -258,7 +279,13 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
              try {
                  const doc = iframe.contentDocument;
                  if (!doc) return;
-                 doc.body.contentEditable = (isEditing && !showStyleEditor && !isLive) ? "true" : "false";
+                 const isActuallyEditable = (isEditing && !showStyleEditor && !isLive);
+                 doc.body.contentEditable = isActuallyEditable ? "true" : "false";
+                 if (isActuallyEditable) {
+                    doc.body.classList.add('kb-edit-active');
+                 } else {
+                    doc.body.classList.remove('kb-edit-active');
+                 }
              } catch (e) {}
         };
         toggleEdit(); iframe.onload = toggleEdit;
@@ -331,8 +358,25 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
             <div className="flex items-center gap-2">
                 {!isEditing && !showStyleEditor ? (
                     <div className="flex items-center p-1 bg-zinc-900/80 rounded-xl border border-zinc-800 shadow-sm mr-2">
-                        <button onClick={() => setIsEditing(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-black uppercase text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-all"><PencilIcon className="w-3.5 h-3.5" /> Edit</button>
-                        <button onClick={() => setShowStyleEditor(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-black uppercase text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-all"><PaintBrushIcon className="w-3.5 h-3.5" /> Style</button>
+                        <button 
+                            onClick={() => setIsEditing(true)} 
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-black uppercase text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-all"
+                        >
+                            <PencilIcon className="w-3.5 h-3.5" /> Edit
+                        </button>
+                        <button 
+                            onClick={() => setShowStyleEditor(true)} 
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-black uppercase text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-all"
+                        >
+                            <PaintBrushIcon className="w-3.5 h-3.5" /> Style
+                        </button>
+                        <button 
+                            onClick={onStandardize} 
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-black uppercase text-zinc-400 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition-all"
+                            title="Format for ServiceNow Template"
+                        >
+                            <ShieldCheckIcon className="w-3.5 h-3.5" /> Compliance
+                        </button>
                     </div>
                 ) : (
                     <div className="flex items-center gap-2 mr-2">
@@ -444,11 +488,18 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
                 </div>
             </div>
         )}
+
+        {isEditing && (
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[101] flex items-center gap-3 px-6 py-2 bg-blue-600 text-white rounded-full shadow-2xl animate-in slide-in-from-top-4">
+                <PencilIcon className="w-4 h-4 animate-bounce" />
+                <span className="text-xs font-black uppercase tracking-widest">Direct Edit Mode Active</span>
+            </div>
+        )}
         
         <div className={`flex-1 w-full overflow-y-auto overflow-x-hidden p-6 md:p-12 transition-all duration-700 ${processedHtml ? 'bg-[#121214]' : 'bg-[#050507]'}`}>
           <div className={`mx-auto max-w-[900px] w-full min-h-full transition-all duration-1000 ${processedHtml ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
             {processedHtml ? (
-                <div className="relative bg-white shadow-[0_40px_120px_rgba(0,0,0,0.6)] rounded-sm overflow-hidden min-h-[1200px] animate-in fade-in slide-in-from-bottom-4 duration-1000">
+                <div className={`relative bg-white shadow-[0_40px_120px_rgba(0,0,0,0.6)] rounded-sm overflow-hidden min-h-[1200px] animate-in fade-in slide-in-from-bottom-4 duration-1000 ${isEditing ? 'ring-4 ring-blue-500/30' : ''}`}>
                     <iframe 
                       ref={iframeRef} 
                       title="Preview" 

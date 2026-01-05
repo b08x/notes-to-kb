@@ -203,22 +203,24 @@ export const Chat: React.FC<ChatProps> = ({
 
       {/* Interaction Footer */}
       <div className="p-5 bg-[#0c0c0e] border-t border-zinc-800 shadow-[0_-10px_30px_rgba(0,0,0,0.4)]">
-        <div className="flex items-center justify-center gap-3 mb-5">
-            {activeArtifactId && !isGenerating && (
-                <>
-                    <button onClick={() => setShowRefineDialog(true)} className="flex items-center gap-2 px-4 py-2 bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 text-[10px] font-black uppercase rounded-lg border border-blue-500/20 transition-all">
-                        <PencilSquareIcon className="w-3.5 h-3.5" /> Refine
-                    </button>
-                    <button onClick={() => setShowAddContextDialog(true)} className="flex items-center gap-2 px-4 py-2 bg-purple-600/10 hover:bg-purple-600/20 text-purple-400 text-[10px] font-black uppercase rounded-lg border border-purple-500/20 transition-all">
-                        <CameraIcon className="w-3.5 h-3.5" /> Context
-                    </button>
-                </>
-            )}
+        <div className="grid grid-cols-3 gap-3 mb-5">
+            <button 
+                onClick={() => setShowRefineDialog(true)} 
+                className="flex items-center justify-center gap-2 px-3 py-2.5 bg-blue-600/10 hover:bg-blue-600 text-blue-400 hover:text-white text-[10px] font-black uppercase rounded-lg border border-blue-500/30 transition-all shadow-lg"
+            >
+                <PencilSquareIcon className="w-4 h-4" /> Refine
+            </button>
+            <button 
+                onClick={() => setShowAddContextDialog(true)} 
+                className="flex items-center justify-center gap-2 px-3 py-2.5 bg-purple-600/10 hover:bg-purple-600 text-purple-400 hover:text-white text-[10px] font-black uppercase rounded-lg border border-purple-500/30 transition-all shadow-lg"
+            >
+                <CameraIcon className="w-4 h-4" /> Context
+            </button>
             <button 
                 onClick={onToggleLive}
-                className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] font-black uppercase rounded-lg border border-zinc-700 transition-all"
+                className="flex items-center justify-center gap-2 px-3 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] font-black uppercase rounded-lg border border-zinc-700 transition-all shadow-lg"
             >
-                <BoltIcon className="w-3.5 h-3.5 text-blue-500" /> Live Assistant
+                <BoltIcon className="w-4 h-4 text-blue-500" /> Live Assistant
             </button>
         </div>
         

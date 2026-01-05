@@ -16,7 +16,8 @@ import {
     ArrowPathIcon,
     MusicalNoteIcon,
     SpeakerWaveIcon,
-    ChatBubbleBottomCenterTextIcon
+    ChatBubbleBottomCenterTextIcon,
+    SparklesIcon
 } from '@heroicons/react/24/outline';
 import { AppSettings } from './SettingsModal';
 import { InputArea } from './InputArea';
@@ -279,7 +280,31 @@ export const SessionConfigView: React.FC<SessionConfigViewProps> = ({
                                             </optgroup>
                                         )}
                                     </select>
-                                    <p className="text-[8px] text-zinc-600 font-medium italic">This model generates the text response before it's sent to your voice engine.</p>
+                                </div>
+
+                                {/* Persona Selection */}
+                                <div className="space-y-2">
+                                    <div className="flex items-center gap-1.5">
+                                        <SparklesIcon className="w-3.5 h-3.5 text-yellow-400" />
+                                        <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Persona Logic (Prompt)</label>
+                                    </div>
+                                    <select 
+                                        value={settings.livePromptMode} 
+                                        onChange={(e) => handleChange('livePromptMode', e.target.value)}
+                                        className="w-full bg-black border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500/50 appearance-none"
+                                    >
+                                        <option value="witty">Witty & Sharp</option>
+                                        <option value="professional">Professional & Technical</option>
+                                        <option value="custom">Custom System Protocol</option>
+                                    </select>
+                                    {settings.livePromptMode === 'custom' && (
+                                        <textarea 
+                                            value={settings.customLivePrompt}
+                                            onChange={(e) => handleChange('customLivePrompt', e.target.value)}
+                                            placeholder="Define unique behavior parameters..."
+                                            className="w-full bg-black border border-zinc-800 rounded-lg p-3 text-xs text-zinc-300 focus:outline-none focus:border-blue-500/50 min-h-[100px] font-mono mt-2"
+                                        />
+                                    )}
                                 </div>
 
                                 {/* Voice Protocol Selection */}

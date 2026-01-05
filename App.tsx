@@ -244,7 +244,7 @@ const App: React.FC = () => {
             temperature: appSettings.temperature,
             topP: appSettings.topP,
             thinkingBudget: appSettings.thinkingBudget,
-            geminiKey: appSettings.geminiKey // New: Pass key to service
+            geminiKey: appSettings.geminiKey
           }
       );
       
@@ -268,7 +268,6 @@ const App: React.FC = () => {
           activeCreation: newArtifact
       }));
 
-      // Auto-enable live if user has it set in global settings
       if (appSettings.enableLiveApi && !isLiveActive) {
           setIsLiveActive(true);
       }
@@ -287,6 +286,10 @@ const App: React.FC = () => {
       setIsGenerating(false);
       setGenerationStatus("");
     }
+  };
+
+  const handleStandardize = () => {
+      handleSendMessage("Reformat this document strictly following ServiceNow Knowledge Base template standards. Ensure all headings, metadata, and sections are perfectly aligned with SNC industry best practices. Maintain all technical content accuracy.");
   };
 
   return (
@@ -359,6 +362,7 @@ const App: React.FC = () => {
                     streamSize={streamSize}
                     imageMap={activeProject.imageMap}
                     onUpdateArtifact={handleUpdateArtifact}
+                    onStandardize={handleStandardize}
                     isLive={isLiveActive}
                 />
              )}
