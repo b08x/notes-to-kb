@@ -3,7 +3,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { Creation } from './components/CreationHistory';
 import { bringToLife, ChatMessage, Attachment } from './services/gemini';
 import { Chat, Message } from './components/Chat';
@@ -40,6 +40,7 @@ const App: React.FC = () => {
   
   // Live State - Now initialized as false, activated upon first generation
   const [isLiveActive, setIsLiveActive] = useState(false);
+  const livePulseRef = useRef<any>(null);
   
   // Settings & Help State
   const [showSettings, setShowSettings] = useState(false);
@@ -47,7 +48,7 @@ const App: React.FC = () => {
   const [appSettings, setAppSettings] = useState<AppSettings>({
       provider: 'gemini',
       enableLiveApi: true,
-      liveModel: 'gemini-2.5-flash-native-audio-preview-09-2025',
+      liveModel: 'gemini-2.4-flash-native-audio-preview-09-2025',
       liveVoice: 'Fenrir',
       livePromptMode: 'witty',
       customLivePrompt: '',
@@ -257,12 +258,17 @@ const App: React.FC = () => {
     }
   };
 
-  const handleUpdateArtifact = (id: string, html: string) => {
+  const handleUpdateArtifact = (id: string, html: string, isManualEdit: boolean = false) => {
       updateActiveProject(p => {
           const newMessages = p.messages.map(m => (m.artifact?.id === id ? { ...m, artifact: { ...m.artifact, html } } : m));
           const newActiveCreation = p.activeCreation?.id === id ? { ...p.activeCreation, html } : p.activeCreation;
           return { ...p, messages: newMessages, activeCreation: newActiveCreation };
       });
+      
+      // BUG-001: Sync manual edits to Live Assistant context
+      if (isManualEdit && isLiveActive && livePulseRef.current) {
+          livePulseRef.current.sendUpdate(`[SYSTEM] User manually updated the document. NEW_STATE:\n\`\`\`html\n${html.substring(0, 15000)}\n\`\`\``);
+      }
   };
 
   return (
@@ -340,6 +346,7 @@ const App: React.FC = () => {
 
       {/* Persistent Floating Live Pulse Pop-up - Positioned top-right to avoid blocking buttons */}
       <LivePulse 
+          ref={livePulseRef}
           isActive={isLiveActive}
           onClose={() => setIsLiveActive(false)}
           currentHtml={activeProject.activeCreation?.html}

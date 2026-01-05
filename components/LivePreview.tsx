@@ -29,7 +29,7 @@ interface LivePreviewProps {
   streamSize?: number;
   className?: string;
   imageMap?: Record<string, string>;
-  onUpdateArtifact?: (id: string, html: string) => void;
+  onUpdateArtifact?: (id: string, html: string, isManualEdit: boolean) => void;
   isLive?: boolean;
 }
 
@@ -185,7 +185,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
         const doc = iframeRef.current.contentDocument;
         doc.querySelectorAll('[contenteditable]').forEach(el => el.removeAttribute('contenteditable'));
         let newHtml = doc.documentElement.outerHTML;
-        if (creation && onUpdateArtifact) onUpdateArtifact(creation.id, newHtml);
+        if (creation && onUpdateArtifact) onUpdateArtifact(creation.id, newHtml, true);
         setIsEditing(false); setShowStyleEditor(false);
     };
 

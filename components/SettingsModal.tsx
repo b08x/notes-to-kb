@@ -289,7 +289,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, s
                                             onChange={(e) => handleChange('liveModel', e.target.value)}
                                             className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
                                         >
-                                            <option value="gemini-2.5-flash-native-audio-preview-09-2025">Gemini 2.5 Flash Native</option>
+                                            <option value="gemini-2.4-flash-native-audio-preview-09-2025">Gemini 2.4 Flash Native</option>
                                         </select>
                                     </div>
                                     <div>

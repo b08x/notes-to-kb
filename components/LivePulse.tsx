@@ -3,7 +3,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  */
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useImperativeHandle, forwardRef } from 'react';
 import { XMarkIcon, MicrophoneIcon, BoltIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon, ArrowPathIcon, ExclamationTriangleIcon, KeyIcon, ChevronUpIcon, ChevronDownIcon } from '@heroicons/react/24/solid';
 import { LiveClient } from '../services/live-client';
 import { WITTY_PROMPT, PROFESSIONAL_PROMPT, LivePromptMode } from './SettingsModal';
@@ -22,14 +22,14 @@ interface LivePulseProps {
   };
 }
 
-export const LivePulse: React.FC<LivePulseProps> = ({ 
+export const LivePulse = forwardRef<any, LivePulseProps>(({ 
     onClose, 
     isActive, 
     currentHtml, 
     onUpdateHtml, 
     mode = 'overlay', 
     liveConfig 
-}) => {
+}, ref) => {
   const [volume, setVolume] = useState(0);
   const [isExpanded, setIsExpanded] = useState(true);
   const [status, setStatus] = useState<'connecting' | 'active' | 'error' | 'key_required'>('connecting');
@@ -41,6 +41,14 @@ export const LivePulse: React.FC<LivePulseProps> = ({
   useEffect(() => {
     callbacksRef.current = { onUpdateHtml };
   }, [onUpdateHtml]);
+
+  useImperativeHandle(ref, () => ({
+    sendUpdate: (text: string) => {
+      if (clientRef.current && status === 'active') {
+        clientRef.current.sendText(text);
+      }
+    }
+  }));
 
   const initSession = async () => {
     if (!isActive) return;
@@ -99,7 +107,7 @@ export const LivePulse: React.FC<LivePulseProps> = ({
                 setErrorMessage("Session ended.");
             }
         }, {
-            model: liveConfig.model,
+            model: liveConfig.model || 'gemini-2.4-flash-native-audio-preview-09-2025',
             voice: liveConfig.voice,
             prompt: prompt
         });
@@ -202,7 +210,7 @@ export const LivePulse: React.FC<LivePulseProps> = ({
                         </div>
 
                         {/* Transcription Bubble */}
-                        <div className="bg-black/40 rounded-xl p-3 border border-white/5 min-h-[60px] flex flex-col justify-center shadow-inner">
+                        <div className="bg-black/40 rounded-xl p-3 border border-white/5 min-h-[60px] flex flex-col justify-center shadow-inner text-center">
                             {transcription.user && (
                                 <div className="animate-in fade-in slide-in-from-bottom-1 duration-300">
                                     <p className="text-[11px] text-zinc-400 font-medium italic">"{transcription.user}"</p>
@@ -263,4 +271,4 @@ export const LivePulse: React.FC<LivePulseProps> = ({
         `}</style>
     </div>
   );
-};
+});

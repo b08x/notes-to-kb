@@ -112,7 +112,8 @@ export class LiveClient {
     this.outputNode = this.outputAudioContext.createGain();
     this.outputNode.connect(this.outputAudioContext.destination);
 
-    const modelName = config?.model || 'gemini-2.5-flash-native-audio-preview-09-2025';
+    // Using 2.4-flash-native-audio as it's the stable variant for the current tokenization pipeline
+    const modelName = config?.model || 'gemini-2.4-flash-native-audio-preview-09-2025';
     const voiceName = config?.voice || 'Fenrir';
     const systemInstruction = config?.prompt || "You are a helpful assistant.";
 
@@ -126,8 +127,6 @@ export class LiveClient {
               voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceName } },
             },
             systemInstruction: systemInstruction,
-            inputAudioTranscription: {},
-            outputAudioTranscription: {},
           },
           callbacks: {
             onopen: async () => {
@@ -156,10 +155,9 @@ export class LiveClient {
         // Send initial state safely after session is established
         this.sessionPromise.then((session) => {
             if (this.initialContext) {
-                // Truncate context to avoid payload size errors
-                const contextSafe = this.initialContext.substring(0, 10000).replace(/`/g, "'");
+                const contextSafe = this.initialContext.substring(0, 15000).replace(/`/g, "'");
                 session.sendRealtimeInput({
-                    text: `[SYSTEM] The current document content is below. Use it as a base for refinements:\n\`\`\`html\n${contextSafe}\n\`\`\``
+                    text: `[SYSTEM] CURRENT_DOCUMENT_STATE:\n\`\`\`html\n${contextSafe}\n\`\`\``
                 });
             }
         });
