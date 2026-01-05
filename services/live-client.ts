@@ -276,7 +276,7 @@ export class LiveClient {
             if (this.ttsService) this.ttsService.speak(textPart);
         }
     }
-    if (this.ttsService && 'flush' in this.ttsService) (this.ttsService as ElevenLabsTTS).flush();
+    if (this.ttsService && 'flush' in this.ttsService) this.ttsService.flush();
   }
 
   private async processWithOpenRouter(text: string) {
@@ -355,7 +355,7 @@ export class LiveClient {
         }
     }
     this.orHistory.push({ role: 'assistant', content: fullModelResponse });
-    if (this.ttsService && 'flush' in this.ttsService) (this.ttsService as ElevenLabsTTS).flush();
+    if (this.ttsService && 'flush' in this.ttsService) this.ttsService.flush();
   }
 
   public stopAudio() {

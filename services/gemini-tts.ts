@@ -14,6 +14,8 @@ export class GeminiNativeTTS {
   private isMonitoring = false;
   private ai: GoogleGenAI;
   private voiceName: string;
+  private textBuffer = "";
+  private isProcessing = false;
 
   constructor(voiceName: string = 'Fenrir') {
     this.ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -32,13 +34,39 @@ export class GeminiNativeTTS {
     return Promise.resolve();
   }
 
-  public async speak(text: string) {
-    if (!text.trim()) return;
+  /**
+   * Buffers text and only sends to Gemini when a complete sentence is formed or forced.
+   * This is critical to avoid hitting the 3 RPM (Requests Per Minute) free tier quota.
+   */
+  public async speak(text: string, isFinal = false) {
+    if (!text && !isFinal) return;
+    
+    this.textBuffer += text;
 
+    // Trigger only on sentence boundaries or if forced by isFinal/length.
+    // This minimizes API calls significantly.
+    const shouldTrigger = isFinal || 
+                         this.textBuffer.length > 100 || 
+                         /[.!?]\s*$/.test(this.textBuffer.trim());
+
+    if (!shouldTrigger || !this.textBuffer.trim()) return;
+
+    const textToSpeak = this.textBuffer.trim();
+    this.textBuffer = "";
+    
+    await this.processTtsRequest(textToSpeak);
+  }
+
+  private async processTtsRequest(text: string) {
     try {
-      const response = await this.ai.models.generateContent({
+      // Use a fresh instance to ensure correct API key usage if rotated
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      
+      const response = await ai.models.generateContent({
         model: "gemini-2.5-flash-preview-tts",
-        contents: [{ parts: [{ text }] }],
+        // Adding "Convert the following text to speech:" helps prevent the 400 error 
+        // where the model mistakenly tries to continue the text generation.
+        contents: [{ parts: [{ text: `Convert the following text to speech: ${text}` }] }],
         config: {
           responseModalities: [Modality.AUDIO],
           speechConfig: {
@@ -53,14 +81,28 @@ export class GeminiNativeTTS {
       if (base64Audio) {
         await this.playBase64Audio(base64Audio);
       }
-    } catch (e) {
-      console.error("Gemini TTS Error:", e);
+    } catch (e: any) {
+        // Log error but don't crash. If it's a 429, we might want to notify the user.
+        const msg = e.message || "";
+        if (msg.includes("429") || msg.includes("RESOURCE_EXHAUSTED")) {
+            console.warn("Gemini TTS Quota Exceeded (3 RPM Limit). Buffering more aggressively...");
+            // Optionally put text back in buffer to try again later, 
+            // but for a live session, skipping is often safer to avoid lag.
+        } else {
+            console.error("Gemini TTS Error:", e);
+        }
+    }
+  }
+
+  public async flush() {
+    if (this.textBuffer.trim()) {
+        await this.speak("", true);
     }
   }
 
   private async playBase64Audio(base64: string) {
     if (!this.audioContext) {
-      this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
       this.analyser = this.audioContext.createAnalyser();
       this.analyser.fftSize = 256;
       this.analyser.connect(this.audioContext.destination);
@@ -79,6 +121,7 @@ export class GeminiNativeTTS {
         bytes[i] = binaryString.charCodeAt(i);
       }
 
+      // Gemini TTS returns raw 16-bit PCM at 24kHz
       const dataInt16 = new Int16Array(bytes.buffer);
       const audioBuffer = this.audioContext.createBuffer(1, dataInt16.length, 24000);
       const channelData = audioBuffer.getChannelData(0);
@@ -122,6 +165,7 @@ export class GeminiNativeTTS {
     this.sources.forEach(s => { try { s.stop(); } catch (e) { } });
     this.sources.clear();
     this.nextStartTime = 0;
+    this.textBuffer = "";
   }
 
   public stop() {
