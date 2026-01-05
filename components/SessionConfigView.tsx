@@ -15,7 +15,8 @@ import {
     ExclamationCircleIcon, 
     ArrowPathIcon,
     MusicalNoteIcon,
-    SpeakerWaveIcon
+    SpeakerWaveIcon,
+    ChatBubbleBottomCenterTextIcon
 } from '@heroicons/react/24/outline';
 import { AppSettings } from './SettingsModal';
 import { InputArea } from './InputArea';
@@ -64,8 +65,6 @@ export const SessionConfigView: React.FC<SessionConfigViewProps> = ({
                         name: m.displayName || m.name.replace('models/', '')
                     }));
                 setGeminiModels(filtered);
-            } else if (data && data.error) {
-                console.warn("Gemini API Error:", data.error.message);
             }
         } catch (e) {
             console.error("Gemini fetch failed", e);
@@ -155,7 +154,7 @@ export const SessionConfigView: React.FC<SessionConfigViewProps> = ({
                             <div className="space-y-3">
                                 <div className="space-y-1.5">
                                     <div className="flex justify-between items-center">
-                                        <label className="text-[9px] font-bold text-zinc-600 uppercase tracking-wider">Target Model</label>
+                                        <label className="text-[9px] font-bold text-zinc-600 uppercase tracking-wider">Target Model (Artifact Gen)</label>
                                         <button 
                                             onClick={() => settings.provider === 'gemini' ? fetchGeminiModels() : fetchOrModels(settings.openRouterKey)}
                                             className="text-zinc-500 hover:text-blue-400 transition-colors"
@@ -188,15 +187,6 @@ export const SessionConfigView: React.FC<SessionConfigViewProps> = ({
                                     )}
                                 </div>
 
-                                {(isGeminiKeyMissing || isOrKeyMissing) && (
-                                    <div className="flex items-center justify-between px-3 py-2.5 rounded-lg border bg-red-500/10 border-red-500/20 text-red-400">
-                                        <div className="flex items-center gap-2">
-                                            <ExclamationCircleIcon className="w-3.5 h-3.5" />
-                                            <span className="text-[10px] font-bold">Key Invalid - Configure Below</span>
-                                        </div>
-                                    </div>
-                                )}
-                                
                                 <div className="pt-2 border-t border-zinc-800/50">
                                     <button 
                                         onClick={() => setShowAdvanced(!showAdvanced)}
@@ -251,7 +241,7 @@ export const SessionConfigView: React.FC<SessionConfigViewProps> = ({
                     <div className="p-4 bg-zinc-900/30 rounded-xl border border-zinc-800/50 space-y-5">
                         <div className="flex items-center justify-between">
                             <div className="flex flex-col">
-                                <span className="text-[11px] font-bold text-zinc-100">Live Interaction</span>
+                                <span className="text-[11px] font-bold text-zinc-100">Live interaction</span>
                                 <span className="text-[9px] text-zinc-500 uppercase tracking-tighter">Real-time voice editing</span>
                             </div>
                             <label className="relative inline-flex items-center cursor-pointer">
@@ -261,28 +251,63 @@ export const SessionConfigView: React.FC<SessionConfigViewProps> = ({
                         </div>
 
                         {settings.enableLiveApi && (
-                            <div className="space-y-4 pt-2 border-t border-zinc-800/40 animate-in slide-in-from-top-2">
+                            <div className="space-y-5 pt-4 border-t border-zinc-800/40 animate-in slide-in-from-top-2">
+                                
+                                {/* Live Brain Selector */}
                                 <div className="space-y-2">
-                                    <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Voice Protocol</label>
+                                    <div className="flex items-center gap-1.5">
+                                        <ChatBubbleBottomCenterTextIcon className="w-3.5 h-3.5 text-blue-400" />
+                                        <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Live Logic Model (Brain)</label>
+                                    </div>
+                                    <select 
+                                        value={settings.liveModel} 
+                                        onChange={(e) => handleChange('liveModel', e.target.value)}
+                                        className="w-full bg-black border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500/50 appearance-none"
+                                    >
+                                        <optgroup label="Native Logic">
+                                            <option value="gemini-3-flash-preview">Gemini 3 Flash</option>
+                                            <option value="gemini-3-pro-preview">Gemini 3 Pro</option>
+                                        </optgroup>
+                                        {settings.provider === 'openrouter' && orModels.length > 0 && (
+                                            <optgroup label="OpenRouter Selection">
+                                                {orModels.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                                            </optgroup>
+                                        )}
+                                        {settings.provider === 'gemini' && geminiModels.length > 0 && (
+                                            <optgroup label="Available Gemini Nodes">
+                                                {geminiModels.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                                            </optgroup>
+                                        )}
+                                    </select>
+                                    <p className="text-[8px] text-zinc-600 font-medium italic">This model generates the text response before it's sent to your voice engine.</p>
+                                </div>
+
+                                {/* Voice Protocol Selection */}
+                                <div className="space-y-2">
+                                    <div className="flex items-center gap-1.5">
+                                        <MusicalNoteIcon className="w-3.5 h-3.5 text-pink-500" />
+                                        <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Voice Engine (Speech)</label>
+                                    </div>
                                     <div className="grid grid-cols-2 gap-2">
                                         <button 
                                             onClick={() => handleChange('voiceEngine', 'gemini')}
-                                            className={`px-3 py-2 text-[10px] font-black uppercase rounded-lg border transition-all ${settings.voiceEngine === 'gemini' ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-black/20 border-zinc-800 text-zinc-600'}`}
+                                            className={`px-3 py-2 text-[10px] font-black uppercase rounded-lg border transition-all ${settings.voiceEngine === 'gemini' ? 'bg-zinc-800 border-zinc-700 text-white shadow-lg' : 'bg-black/20 border-zinc-800 text-zinc-600'}`}
                                         >
-                                            Gemini Pulse
+                                            Gemini Native
                                         </button>
                                         <button 
                                             onClick={() => handleChange('voiceEngine', 'elevenlabs')}
-                                            className={`px-3 py-2 text-[10px] font-black uppercase rounded-lg border transition-all ${settings.voiceEngine === 'elevenlabs' ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-black/20 border-zinc-800 text-zinc-600'}`}
+                                            className={`px-3 py-2 text-[10px] font-black uppercase rounded-lg border transition-all ${settings.voiceEngine === 'elevenlabs' ? 'bg-zinc-800 border-zinc-700 text-white shadow-lg' : 'bg-black/20 border-zinc-800 text-zinc-600'}`}
                                         >
                                             ElevenLabs
                                         </button>
                                     </div>
                                 </div>
 
+                                {/* Specific Voice Configs */}
                                 {settings.voiceEngine === 'gemini' ? (
                                     <div className="space-y-1.5">
-                                        <label className="text-[9px] font-bold text-zinc-600 uppercase">Selected Voice</label>
+                                        <label className="text-[9px] font-bold text-zinc-600 uppercase">Gemini Voice</label>
                                         <select 
                                             value={settings.liveVoice}
                                             onChange={(e) => handleChange('liveVoice', e.target.value)}
@@ -292,14 +317,27 @@ export const SessionConfigView: React.FC<SessionConfigViewProps> = ({
                                         </select>
                                     </div>
                                 ) : (
-                                    <div className="space-y-3">
+                                    <div className="space-y-3 p-3 bg-black/40 border border-zinc-800 rounded-xl">
                                         <div className="space-y-1.5">
-                                            <label className="text-[9px] font-bold text-zinc-600 uppercase">Voice ID</label>
+                                            <div className="flex justify-between items-center">
+                                                <label className="text-[9px] font-bold text-zinc-600 uppercase">Voice ID</label>
+                                                <span className="text-[8px] bg-orange-500/10 text-orange-500 px-1.5 py-0.5 rounded border border-orange-500/20 font-black">EL-TRANSCODE</span>
+                                            </div>
                                             <input 
                                                 type="text"
                                                 placeholder="e.g. 21m00Tcm4TlvDq8ikWAM"
                                                 value={settings.elevenLabsVoiceId}
                                                 onChange={(e) => handleChange('elevenLabsVoiceId', e.target.value)}
+                                                className="w-full bg-black border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-orange-500/50"
+                                            />
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <label className="text-[9px] font-bold text-zinc-600 uppercase">ElevenLabs API Key</label>
+                                            <input 
+                                                type={showKeys ? "text" : "password"}
+                                                placeholder="eleven_..."
+                                                value={settings.elevenLabsKey || ''}
+                                                onChange={(e) => handleChange('elevenLabsKey', e.target.value)}
                                                 className="w-full bg-black border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-orange-500/50"
                                             />
                                         </div>
@@ -314,7 +352,7 @@ export const SessionConfigView: React.FC<SessionConfigViewProps> = ({
                 <div id="credentials-section" className="space-y-4 pt-4 border-t border-zinc-800/50 animate-in fade-in duration-700">
                     <div className="flex items-center gap-2">
                         <KeyIcon className="w-4 h-4 text-zinc-400" />
-                        <span className="text-[10px] font-black uppercase text-zinc-500 tracking-widest">External Credentials</span>
+                        <span className="text-[10px] font-black uppercase text-zinc-500 tracking-widest">Global Credentials</span>
                     </div>
                     <div className="p-4 bg-zinc-900/50 rounded-xl border border-zinc-800/80 space-y-4">
                         <div className="space-y-2">
@@ -346,19 +384,6 @@ export const SessionConfigView: React.FC<SessionConfigViewProps> = ({
                                 className="w-full bg-black border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500/50 placeholder-zinc-800"
                             />
                         </div>
-                        
-                        {settings.voiceEngine === 'elevenlabs' && (
-                            <div className="space-y-2 pt-2 border-t border-zinc-800/40 animate-in slide-in-from-top-1">
-                                <label className="text-[9px] font-bold text-zinc-600 uppercase">ElevenLabs Key</label>
-                                <input 
-                                    type={showKeys ? "text" : "password"}
-                                    placeholder="elevenlabs_..."
-                                    value={settings.elevenLabsKey || ''}
-                                    onChange={(e) => handleChange('elevenLabsKey', e.target.value)}
-                                    className="w-full bg-black border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-orange-500/50 placeholder-zinc-800"
-                                />
-                            </div>
-                        )}
                     </div>
                 </div>
             </div>
