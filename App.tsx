@@ -74,7 +74,6 @@ const App: React.FC = () => {
       setProjects(prev => prev.map(p => p.id === activeProjectId ? { ...updater(p), lastModified: new Date() } : p));
   };
 
-  // Fix: Added missing project management handlers
   const handleNewProject = () => {
     const newProject: ProjectData = {
       id: crypto.randomUUID(),
@@ -86,6 +85,7 @@ const App: React.FC = () => {
     };
     setProjects(prev => [...prev, newProject]);
     setActiveProjectId(newProject.id);
+    setIsLiveActive(false); // Reset live assistant state for new project
   };
 
   const handleDeleteProject = (id: string) => {
@@ -122,7 +122,6 @@ const App: React.FC = () => {
       }
   };
 
-  // Atomic HTML Patching Logic (PERF-001)
   const handleAtomicUpdate = (toolName: string, args: any) => {
     if (!activeProject.activeCreation) return;
     const { id, html: currentHtml } = activeProject.activeCreation;
@@ -156,7 +155,7 @@ const App: React.FC = () => {
     setGenerationStatus("Synthesizing Input Context");
     setStreamSize(0);
     
-    if (appSettings.enableLiveApi) setIsLiveActive(true);
+    // Live API activation is now moved to after successful generation
     
     const pastMessages = [...activeProject.messages];
     const newUserMsg: Message = {
@@ -258,6 +257,11 @@ const App: React.FC = () => {
           }],
           activeCreation: newArtifact
       }));
+
+      // Activate Live API only AFTER successful document generation
+      if (appSettings.enableLiveApi && !isLiveActive) {
+          setIsLiveActive(true);
+      }
 
     } catch (error: any) {
       updateActiveProject(p => ({
