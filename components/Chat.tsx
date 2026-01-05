@@ -27,6 +27,7 @@ interface ChatProps {
   isGenerating: boolean;
   onSelectArtifact: (creation: Creation) => void;
   activeArtifactId?: string;
+  onToggleLive?: () => void;
   isLive?: boolean;
 }
 
@@ -36,6 +37,7 @@ export const Chat: React.FC<ChatProps> = ({
   isGenerating, 
   onSelectArtifact,
   activeArtifactId,
+  onToggleLive,
   isLive
 }) => {
   const [showImprovementMenu, setShowImprovementMenu] = useState(false);
@@ -88,7 +90,7 @@ export const Chat: React.FC<ChatProps> = ({
   };
 
   return (
-    <div className="relative flex flex-col h-full bg-[#0c0c0e]">
+    <div className="relative flex flex-col h-full bg-[#0c0c0e] animate-in slide-in-from-left-4 duration-500">
       
       {/* Refine Modal Overlay */}
       {showRefineDialog && (
@@ -201,21 +203,31 @@ export const Chat: React.FC<ChatProps> = ({
 
       {/* Interaction Footer */}
       <div className="p-5 bg-[#0c0c0e] border-t border-zinc-800 shadow-[0_-10px_30px_rgba(0,0,0,0.4)]">
-        {activeArtifactId && !isGenerating && (
-            <div className="flex items-center justify-center gap-3 mb-5 animate-in slide-in-from-bottom-2">
-                <button onClick={() => setShowRefineDialog(true)} className="flex items-center gap-2 px-4 py-2 bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 text-[10px] font-black uppercase rounded-lg border border-blue-500/20 transition-all">
-                    <PencilSquareIcon className="w-3.5 h-3.5" /> Refine
-                </button>
-                <button onClick={() => setShowAddContextDialog(true)} className="flex items-center gap-2 px-4 py-2 bg-purple-600/10 hover:bg-purple-600/20 text-purple-400 text-[10px] font-black uppercase rounded-lg border border-purple-500/20 transition-all">
-                    <CameraIcon className="w-3.5 h-3.5" /> Context
-                </button>
-            </div>
-        )}
+        <div className="flex items-center justify-center gap-3 mb-5">
+            {activeArtifactId && !isGenerating && (
+                <>
+                    <button onClick={() => setShowRefineDialog(true)} className="flex items-center gap-2 px-4 py-2 bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 text-[10px] font-black uppercase rounded-lg border border-blue-500/20 transition-all">
+                        <PencilSquareIcon className="w-3.5 h-3.5" /> Refine
+                    </button>
+                    <button onClick={() => setShowAddContextDialog(true)} className="flex items-center gap-2 px-4 py-2 bg-purple-600/10 hover:bg-purple-600/20 text-purple-400 text-[10px] font-black uppercase rounded-lg border border-purple-500/20 transition-all">
+                        <CameraIcon className="w-3.5 h-3.5" /> Context
+                    </button>
+                </>
+            )}
+            <button 
+                onClick={onToggleLive}
+                className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] font-black uppercase rounded-lg border border-zinc-700 transition-all"
+            >
+                <BoltIcon className="w-3.5 h-3.5 text-blue-500" /> Live Assistant
+            </button>
+        </div>
+        
         <InputArea onGenerate={onSendMessage} isGenerating={isGenerating} />
-        <div className="mt-3 flex items-center justify-center gap-4">
-             <span className="text-[8px] font-bold text-zinc-700 uppercase tracking-widest">Protocol 3.1</span>
+        
+        <div className="mt-4 flex items-center justify-center gap-4">
+             <span className="text-[8px] font-bold text-zinc-800 uppercase tracking-widest">Protocol 3.1</span>
              <div className="w-1 h-1 bg-zinc-800 rounded-full"></div>
-             <span className="text-[8px] font-bold text-zinc-700 uppercase tracking-widest">Signal Encrypted</span>
+             <span className="text-[8px] font-bold text-zinc-800 uppercase tracking-widest">Signal Encrypted</span>
         </div>
       </div>
 

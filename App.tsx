@@ -8,7 +8,6 @@ import { Creation } from './components/CreationHistory';
 import { bringToLife, ChatMessage, Attachment } from './services/gemini';
 import { Chat, Message } from './components/Chat';
 import { LivePreview } from './components/LivePreview';
-import { InputArea } from './components/InputArea';
 import { Sidebar, ProjectSummary } from './components/Sidebar';
 import { LivePulse } from './components/LivePulse';
 import { SettingsModal, AppSettings } from './components/SettingsModal';
@@ -51,6 +50,7 @@ const App: React.FC = () => {
       livePromptMode: 'witty',
       customLivePrompt: '',
       generationModel: 'gemini-3-flash-preview',
+      geminiKey: '',
       openRouterKey: '',
       openRouterModel: 'google/gemini-flash-1.5',
       temperature: 0.2,
@@ -243,7 +243,8 @@ const App: React.FC = () => {
           {
             temperature: appSettings.temperature,
             topP: appSettings.topP,
-            thinkingBudget: appSettings.thinkingBudget
+            thinkingBudget: appSettings.thinkingBudget,
+            geminiKey: appSettings.geminiKey // New: Pass key to service
           }
       );
       
@@ -267,6 +268,7 @@ const App: React.FC = () => {
           activeCreation: newArtifact
       }));
 
+      // Auto-enable live if user has it set in global settings
       if (appSettings.enableLiveApi && !isLiveActive) {
           setIsLiveActive(true);
       }
@@ -303,13 +305,35 @@ const App: React.FC = () => {
       />
       
       <div className="flex-1 flex overflow-hidden">
-        <div className="w-full md:w-[450px] border-r border-zinc-800 flex flex-col h-full bg-[#0c0c0e] shrink-0">
+        <div className="w-full md:w-[420px] border-r border-zinc-800 flex flex-col h-full bg-[#0c0c0e] shrink-0 overflow-hidden">
             {isInitialState ? (
                 <SessionConfigView 
                     settings={appSettings} 
                     onUpdateSettings={setAppSettings} 
                     onStart={(prompt, files, template) => handleSendMessage(prompt, files, 'source', template)}
                     isGenerating={isGenerating}
+                />
+            ) : isLiveActive ? (
+                <LivePulse 
+                    ref={livePulseRef}
+                    isActive={isLiveActive}
+                    onClose={() => setIsLiveActive(false)}
+                    currentHtml={activeProject.activeCreation?.html}
+                    onAtomicUpdate={handleAtomicUpdate}
+                    mode="panel"
+                    liveConfig={{
+                        model: appSettings.liveModel,
+                        voice: appSettings.liveVoice,
+                        promptMode: appSettings.livePromptMode,
+                        customPrompt: appSettings.customLivePrompt,
+                        provider: appSettings.provider,
+                        openRouterKey: appSettings.openRouterKey,
+                        voiceEngine: appSettings.voiceEngine,
+                        elevenLabs: {
+                            key: appSettings.elevenLabsKey,
+                            voiceId: appSettings.elevenLabsVoiceId
+                        }
+                    }}
                 />
             ) : (
                 <Chat 
@@ -318,6 +342,7 @@ const App: React.FC = () => {
                     isGenerating={isGenerating}
                     onSelectArtifact={(c) => updateActiveProject(p => ({ ...p, activeCreation: c }))}
                     activeArtifactId={activeProject.activeCreation?.id}
+                    onToggleLive={() => setIsLiveActive(true)}
                     isLive={isLiveActive}
                 />
             )}
@@ -339,28 +364,6 @@ const App: React.FC = () => {
              )}
         </div>
       </div>
-
-      <LivePulse 
-          ref={livePulseRef}
-          isActive={isLiveActive}
-          onClose={() => setIsLiveActive(false)}
-          currentHtml={activeProject.activeCreation?.html}
-          onAtomicUpdate={handleAtomicUpdate}
-          mode="overlay"
-          liveConfig={{
-              model: appSettings.liveModel,
-              voice: appSettings.liveVoice,
-              promptMode: appSettings.livePromptMode,
-              customPrompt: appSettings.customLivePrompt,
-              provider: appSettings.provider,
-              openRouterKey: appSettings.openRouterKey,
-              voiceEngine: appSettings.voiceEngine,
-              elevenLabs: {
-                  key: appSettings.elevenLabsKey,
-                  voiceId: appSettings.elevenLabsVoiceId
-              }
-          }}
-      />
 
       <HelpModal isOpen={showHelp} onClose={() => setShowHelp(false)} />
       <SettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} settings={appSettings} onUpdateSettings={setAppSettings} />

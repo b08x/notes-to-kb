@@ -150,8 +150,6 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
             html = html.replace(regex, `src="${dataUrl}" data-kb-id="${id}"`);
         });
 
-        // VIRTUAL DOM RUNTIME: We inject a lightweight script to handle postMessage updates
-        // This prevents the iframe from reloading when surgical tool calls are made.
         const runtimeScript = `
             <script>
                 window.addEventListener('message', (event) => {
@@ -161,7 +159,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
                         if (target) {
                             target.innerHTML = html;
                             target.classList.add('kb-updated-node');
-                            setTimeout(() => target.classList.remove('kb-updated-node'), 2000);
+                            setTimeout(() => target.classList.remove('kb-updated-node'), 3000);
                         }
                     } else if (type === 'APPEND_ELEMENT') {
                         const parent = document.querySelector(selector) || document.body;
@@ -169,7 +167,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
                         const newNode = parent.lastElementChild;
                         if (newNode) {
                             newNode.classList.add('kb-updated-node');
-                            setTimeout(() => newNode.classList.remove('kb-updated-node'), 2000);
+                            setTimeout(() => newNode.classList.remove('kb-updated-node'), 3000);
                         }
                     }
                 });
@@ -177,43 +175,71 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
         `;
 
         const styleTag = `<style id="kb-edit-style">
-            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Lora:ital,wght@0,400;0,600;1,400&display=swap');
+            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+            
             body { 
                 font-family: 'Inter', -apple-system, sans-serif; 
-                line-height: 1.65; 
+                line-height: 1.75; 
                 color: #374151; 
-                max-width: 800px; 
+                max-width: 840px; 
                 margin: 0 auto; 
-                padding: 80px 60px; 
+                padding: 100px 80px; 
                 background-color: #ffffff;
                 -webkit-font-smoothing: antialiased;
             }
-            h1 { font-family: 'Inter', sans-serif; font-size: 3rem; font-weight: 800; color: #111827; letter-spacing: -0.03em; margin-bottom: 0.75rem; line-height: 1.1; }
-            .metadata { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 3.5rem; border-bottom: 2px solid #f3f4f6; padding-bottom: 1.25rem; }
-            h2 { font-size: 1.875rem; font-weight: 700; color: #111827; margin-top: 4rem; margin-bottom: 1.5rem; letter-spacing: -0.02em; border-left: 4px solid #3b82f6; padding-left: 1rem; margin-left: -1.25rem; }
-            h3 { font-size: 1.4rem; font-weight: 600; color: #1f2937; margin-top: 3rem; margin-bottom: 1.25rem; }
-            p { margin-bottom: 1.5rem; font-size: 1.1rem; }
-            ul, ol { margin-bottom: 2.5rem; padding-left: 1.75rem; }
-            li { margin-bottom: 1rem; }
+            
+            h1 { font-size: 3.5rem; font-weight: 800; color: #111827; letter-spacing: -0.04em; margin-bottom: 1rem; line-height: 1.1; }
+            
+            .metadata { 
+                font-family: 'JetBrains Mono', monospace; 
+                font-size: 11px; 
+                color: #9ca3af; 
+                text-transform: uppercase; 
+                letter-spacing: 0.15em; 
+                margin-bottom: 4rem; 
+                border-bottom: 1px solid #f3f4f6; 
+                padding-bottom: 1.5rem; 
+                display: flex;
+                gap: 1.5rem;
+            }
+            
+            h2 { font-size: 2rem; font-weight: 700; color: #111827; margin-top: 4.5rem; margin-bottom: 1.75rem; letter-spacing: -0.02em; border-left: 5px solid #3b82f6; padding-left: 1.5rem; margin-left: -1.5rem; }
+            h3 { font-size: 1.5rem; font-weight: 600; color: #1f2937; margin-top: 3.5rem; margin-bottom: 1.25rem; }
+            
+            p { margin-bottom: 1.75rem; font-size: 1.125rem; }
+            
+            ul, ol { margin-bottom: 3rem; padding-left: 2rem; }
+            li { margin-bottom: 1.25rem; }
             li strong { color: #111827; font-weight: 700; }
-            img { max-width: 100%; height: auto; display: block; margin: 3.5rem auto; border-radius: 16px; border: 1px solid #e5e7eb; box-shadow: 0 20px 40px -10px rgba(0,0,0,0.1); }
-            .ai-diagram { margin: 4rem 0; background: #f9fafb; border-radius: 20px; border: 1px solid #e5e7eb; padding: 2.5rem; }
-            .note, .warning { padding: 1.75rem; border-radius: 14px; margin: 2.5rem 0; font-size: 1rem; }
-            .note { background: #eff6ff; border-left: 6px solid #3b82f6; color: #1e40af; }
+            
+            img { max-width: 100%; height: auto; display: block; margin: 4rem auto; border-radius: 20px; border: 1px solid #e5e7eb; box-shadow: 0 30px 60px -15px rgba(0,0,0,0.12); transition: transform 0.3s ease; }
+            img:hover { transform: scale(1.01); }
+            
+            .ai-diagram { margin: 4.5rem 0; background: #f8fafc; border-radius: 24px; border: 1px solid #e2e8f0; padding: 3rem; }
+            
+            .note, .warning { padding: 2rem; border-radius: 18px; margin: 3rem 0; font-size: 1.05rem; position: relative; overflow: hidden; }
+            .note { background: #f0f7ff; border-left: 6px solid #3b82f6; color: #1e40af; }
             .warning { background: #fffaf5; border-left: 6px solid #f97316; color: #9a3412; }
-            table { width: 100%; border-collapse: separate; border-spacing: 0; margin: 3rem 0; font-size: 1rem; border-radius: 12px; overflow: hidden; border: 1px solid #e5e7eb; }
-            th { text-align: left; background: #f8fafc; padding: 16px 20px; border-bottom: 2px solid #e2e8f0; color: #0f172a; font-weight: 700; }
-            td { padding: 16px 20px; border-bottom: 1px solid #f1f5f9; }
+            
+            table { width: 100%; border-collapse: separate; border-spacing: 0; margin: 3.5rem 0; font-size: 1rem; border-radius: 16px; overflow: hidden; border: 1px solid #e5e7eb; }
+            th { text-align: left; background: #f9fafb; padding: 18px 24px; border-bottom: 2px solid #f1f5f9; color: #111827; font-weight: 700; }
+            td { padding: 18px 24px; border-bottom: 1px solid #f1f5f9; }
             tr:last-child td { border-bottom: none; }
-            [contenteditable="true"]:focus { outline: none; box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.25); border-radius: 6px; }
-            @keyframes kb-diff-pulse {
-                0% { background-color: rgba(52, 211, 153, 0.1); }
-                50% { background-color: rgba(52, 211, 153, 0.3); }
+            
+            [contenteditable="true"]:focus { outline: none; box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.25); border-radius: 8px; }
+            
+            @keyframes glowPulse {
+                0% { background-color: rgba(52, 211, 153, 0.0); }
+                15% { background-color: rgba(52, 211, 153, 0.15); box-shadow: 0 0 20px rgba(52, 211, 153, 0.1); }
                 100% { background-color: rgba(52, 211, 153, 0.0); }
             }
-            .kb-updated-node { animation: kb-diff-pulse 2s ease-out; }
-            @keyframes slideUpFade { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-            body > * { animation: slideUpFade 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+            .kb-updated-node { animation: glowPulse 3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+            
+            @keyframes reveal { 
+                from { opacity: 0; transform: translateY(15px); } 
+                to { opacity: 1; transform: translateY(0); } 
+            }
+            body > * { animation: reveal 0.8s cubic-bezier(0.16, 1, 0.3, 1) both; }
         </style>`;
 
         let final = html;
@@ -224,20 +250,6 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
         }
         return final;
     }, [creation?.html, imageMap]);
-
-    // SURGICAL UPDATE HANDLER:
-    // If we are in Live mode and receive an update, we push it to the iframe via postMessage
-    // instead of letting React re-render the whole iframe.
-    useEffect(() => {
-        const iframe = iframeRef.current;
-        if (!iframe || !isLive || isLoading) return;
-
-        // This effectively acts as our Virtual DOM "Apply" step.
-        const handleAtomicUpdate = (event: any) => {
-            // We listen for tool calls that would normally trigger onUpdateArtifact
-            // In a real implementation, we'd hook into the onAtomicUpdate prop from App.tsx
-        };
-    }, [isLive, isLoading]);
 
     useEffect(() => {
         const iframe = iframeRef.current;
@@ -298,8 +310,8 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
     const currentPhaseIndex = phases.findIndex(p => loadingMessage?.toLowerCase().includes(p.trigger));
 
   return (
-    <div className={`flex flex-col h-full bg-[#050507] border-l border-zinc-800 transition-all duration-300 ${className} ${isFullScreen ? '!fixed !inset-0 !z-[100] !w-screen !h-screen !border-0' : ''}`}>
-      <div className="h-16 flex items-center justify-between px-6 border-b border-zinc-800 bg-[#09090b]/90 backdrop-blur-2xl sticky top-0 z-10 shrink-0">
+    <div className={`flex flex-col h-full bg-[#050507] transition-all duration-300 ${className} ${isFullScreen ? '!fixed !inset-0 !z-[100] !w-screen !h-screen !border-0' : ''}`}>
+      <div className="h-16 flex items-center justify-between px-6 border-b border-zinc-800 bg-[#09090b]/90 backdrop-blur-2xl sticky top-0 z-[101] shrink-0">
         <div className="flex items-center space-x-4 shrink-0">
             <div className="relative">
                 <div className={`w-3 h-3 rounded-full ${isLoading ? 'bg-blue-500 animate-pulse' : 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.4)]'}`}></div>
@@ -370,7 +382,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
 
       <div className="flex-1 relative bg-[#050507] w-full overflow-hidden flex flex-col items-center">
         {isLoading && (
-            <div className="absolute inset-0 z-50 bg-[#050507]/80 backdrop-blur-3xl flex items-center justify-center animate-in fade-in duration-500">
+            <div className="absolute inset-0 z-[102] bg-[#050507]/90 backdrop-blur-3xl flex items-center justify-center animate-in fade-in duration-500">
                 <div className="max-w-md w-full p-1 border border-zinc-800/50 rounded-[3rem] bg-zinc-900/20 shadow-2xl">
                     <div className="px-10 py-12 rounded-[2.8rem] bg-black/60 border border-zinc-800 flex flex-col items-center text-center shadow-inner">
                         
@@ -380,9 +392,6 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
                             </div>
                             <div className="absolute -inset-8 animate-[spin_12s_linear_infinite] opacity-60">
                                 <div className="absolute top-0 left-1/2 -translate-x-1/2 w-3 h-3 bg-blue-500 rounded-full shadow-[0_0_20px_rgba(59,130,246,1)]"></div>
-                            </div>
-                            <div className="absolute -inset-6 animate-[spin_8s_linear_infinite_reverse] opacity-30">
-                                <div className="absolute bottom-0 right-1/4 w-2 h-2 bg-indigo-500 rounded-full"></div>
                             </div>
                         </div>
 
@@ -437,14 +446,14 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
         )}
         
         <div className={`flex-1 w-full overflow-y-auto overflow-x-hidden p-6 md:p-12 transition-all duration-700 ${processedHtml ? 'bg-[#121214]' : 'bg-[#050507]'}`}>
-          <div className={`mx-auto max-w-[840px] w-full min-h-full transition-all duration-1000 ${processedHtml ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
+          <div className={`mx-auto max-w-[900px] w-full min-h-full transition-all duration-1000 ${processedHtml ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
             {processedHtml ? (
-                <div className="relative bg-white shadow-[0_30px_100px_rgba(0,0,0,0.5)] rounded-sm overflow-hidden min-h-[1100px]">
+                <div className="relative bg-white shadow-[0_40px_120px_rgba(0,0,0,0.6)] rounded-sm overflow-hidden min-h-[1200px] animate-in fade-in slide-in-from-bottom-4 duration-1000">
                     <iframe 
                       ref={iframeRef} 
                       title="Preview" 
                       srcDoc={processedHtml} 
-                      className={`w-full h-full border-none transition-opacity duration-1000 min-h-[1100px] ${isLoading ? 'opacity-20 pointer-events-none' : 'opacity-100'}`} 
+                      className={`w-full h-full border-none transition-opacity duration-1000 min-h-[1200px] ${isLoading ? 'opacity-20 pointer-events-none' : 'opacity-100'}`} 
                       sandbox="allow-scripts allow-forms allow-popups allow-modals allow-same-origin" 
                     />
                 </div>
@@ -457,25 +466,20 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
                     <div className="w-full h-full flex items-center justify-center p-8 bg-zinc-900/30 rounded-2xl border border-zinc-800/50">
                         <div className="relative group max-w-2xl animate-in zoom-in-95 duration-700">
                             <img src={creation.originalImage} alt="Reference Context" className="max-w-full max-h-[75vh] object-contain rounded-xl shadow-[0_20px_60px_rgba(0,0,0,0.6)] border border-white/5 opacity-50 group-hover:opacity-80 transition-opacity" />
-                            <div className="absolute inset-0 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                                <div className="bg-black/80 backdrop-blur-xl px-5 py-2.5 rounded-full text-[10px] font-black uppercase tracking-[0.2em] text-white border border-white/10 shadow-2xl">
-                                    Base Visual Context
-                                </div>
-                            </div>
                         </div>
                     </div>
                 )
             ) : (
                 <div className="flex flex-col items-center justify-center min-h-[60vh] text-zinc-700 space-y-8 animate-in fade-in duration-1000">
                     <div className="relative">
-                        <div className="p-6 bg-zinc-900/40 rounded-[2rem] border border-zinc-800/50 shadow-inner">
-                            <SparklesIcon className="w-16 h-16 opacity-10 animate-pulse text-blue-500" />
+                        <div className="p-8 bg-zinc-900/40 rounded-[2.5rem] border border-zinc-800/50 shadow-inner">
+                            <SparklesIcon className="w-20 h-20 opacity-10 animate-pulse text-blue-500" />
                         </div>
                         <div className="absolute -inset-10 bg-blue-500/5 blur-3xl rounded-full"></div>
                     </div>
                     <div className="text-center space-y-2">
-                        <p className="text-[10px] font-black tracking-[0.4em] uppercase opacity-30">Awaiting Signal</p>
-                        <p className="text-[12px] font-medium text-zinc-600 max-w-[240px] leading-relaxed">
+                        <p className="text-[11px] font-black tracking-[0.5em] uppercase opacity-40">Awaiting Signal</p>
+                        <p className="text-[13px] font-medium text-zinc-600 max-w-[280px] leading-relaxed">
                             Upload high-fidelity technical specs or captured UI to manifest professional documentation
                         </p>
                     </div>

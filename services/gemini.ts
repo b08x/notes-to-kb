@@ -23,6 +23,7 @@ export interface GenConfig {
     temperature?: number;
     topP?: number;
     thinkingBudget?: number;
+    geminiKey?: string; // New: Pass user-provided key
 }
 
 /**
@@ -179,7 +180,11 @@ export async function bringToLife(
                     }
                 }
             } else {
-                const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+                // Use genConfig.geminiKey if provided, otherwise fallback to process.env.API_KEY
+                const effectiveKey = genConfig.geminiKey || process.env.API_KEY;
+                if (!effectiveKey) throw new Error("Gemini API Key is missing. Please provide one in the credentials section.");
+                
+                const ai = new GoogleGenAI({ apiKey: effectiveKey });
                 const parts: any[] = [];
                 if (history.length > 0) {
                     let historyText = "--- HISTORY ---\n";

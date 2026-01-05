@@ -3,8 +3,17 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  */
-import React, { useState, useEffect } from 'react';
-import { XMarkIcon, ChatBubbleBottomCenterTextIcon, AcademicCapIcon, AdjustmentsHorizontalIcon, ArrowPathIcon, CpuChipIcon, ShieldCheckIcon, EyeIcon, MusicalNoteIcon, BoltIcon } from '@heroicons/react/24/outline';
+import React, { useState } from 'react';
+import { 
+    XMarkIcon, 
+    CpuChipIcon, 
+    KeyIcon, 
+    EyeIcon, 
+    MusicalNoteIcon, 
+    BoltIcon,
+    SpeakerWaveIcon,
+    InformationCircleIcon
+} from '@heroicons/react/24/outline';
 
 export type LivePromptMode = 'witty' | 'professional' | 'custom';
 export type Provider = 'gemini' | 'openrouter';
@@ -14,17 +23,18 @@ export interface AppSettings {
     provider: Provider;
     enableLiveApi: boolean;
     liveModel: string;
-    liveVoice: string;
+    liveVoice: string; // Prebuilt Gemini Voice name
     livePromptMode: LivePromptMode;
     customLivePrompt: string;
     generationModel: string;
+    geminiKey: string; 
     openRouterKey: string;
     openRouterModel: string;
     // Generation Parameters
     temperature: number;
     topP: number;
-    thinkingBudget: number; // For Gemini 3/2.5 models
-    // ElevenLabs Settings
+    thinkingBudget: number; 
+    // Voice Settings
     voiceEngine: VoiceEngine;
     elevenLabsKey: string;
     elevenLabsVoiceId: string;
@@ -52,16 +62,6 @@ Your goal is to support users in creating accurate and standard-compliant Knowle
 
 Maintain a calm, pragmatic, and collegial tone.`;
 
-const PRESET_ELEVEN_VOICES = [
-    { id: '21m00Tcm4TlvDq8ikWAM', name: 'Rachel' },
-    { id: 'AZnzlk1XhkUvSByyvbjf', name: 'Nicole' },
-    { id: 'EXAVITQu4vr4xnSDxMaL', name: 'Bella' },
-    { id: 'ErXwVqcDhkMocp60zGud', name: 'Antoni' },
-    { id: 'MF3mGyEYCl7XYW7LecjN', name: 'Rachel (Legacy)' },
-    { id: 'TxGEqnSAs9V0p930z3pB', name: 'Liam' },
-    { id: 'VR6AewrXP67JF4p369cn', name: 'Josh' },
-];
-
 interface SettingsModalProps {
     isOpen: boolean;
     onClose: () => void;
@@ -70,114 +70,115 @@ interface SettingsModalProps {
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings, onUpdateSettings }) => {
-    const [orModels, setOrModels] = useState<{ id: string, name: string, isMultimodal: boolean }[]>([]);
-    const [geminiModels, setGeminiModels] = useState<{ id: string, name: string }[]>([]);
-    const [isFetchingOr, setIsFetchingOr] = useState(false);
-    const [isFetchingGemini, setIsFetchingGemini] = useState(false);
-    const [orError, setOrError] = useState<string | null>(null);
-    const [geminiError, setGeminiError] = useState<string | null>(null);
-    const [isValidated, setIsValidated] = useState(false);
     const [showKey, setShowKey] = useState(false);
-
-    useEffect(() => {
-        if (isOpen && settings.provider === 'gemini') {
-            fetchGeminiModels();
-        }
-        if (isOpen && settings.provider === 'openrouter' && settings.openRouterKey) {
-            fetchOpenRouterModels();
-        }
-    }, [isOpen, settings.provider]);
 
     if (!isOpen) return null;
 
     const handleChange = (key: keyof AppSettings, value: any) => {
         onUpdateSettings({ ...settings, [key]: value });
-        if (key === 'openRouterKey') setIsValidated(false);
     };
 
-    const fetchGeminiModels = async () => {
-        setIsFetchingGemini(true);
-        setGeminiError(null);
-        try {
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${process.env.API_KEY}`);
-            if (!response.ok) throw new Error("Failed to fetch Gemini models.");
-            const data = await response.json();
-            const filtered = data.models
-                .filter((m: any) => m.supportedGenerationMethods.includes("generateContent"))
-                .map((m: any) => ({
-                    id: m.name.replace('models/', ''),
-                    name: m.displayName || m.name.replace('models/', '')
-                }))
-                .sort((a: any, b: any) => b.id.localeCompare(a.id)); 
-            
-            setGeminiModels(filtered);
-        } catch (e: any) {
-            setGeminiError(e.message);
-        } finally {
-            setIsFetchingGemini(false);
-        }
-    };
-
-    const fetchOpenRouterModels = async () => {
-        if (!settings.openRouterKey) {
-            setOrError("API Key is required to fetch models.");
-            return;
-        }
-
-        setIsFetchingOr(true);
-        setOrError(null);
-
-        try {
-            const response = await fetch("https://openrouter.ai/api/v1/models", {
-                headers: {
-                    "Authorization": `Bearer ${settings.openRouterKey}`,
-                    "HTTP-Referer": window.location.origin,
-                    "X-Title": "AI KB Doc Assistant"
-                }
-            });
-
-            if (!response.ok) {
-                const data = await response.json();
-                throw new Error(data.error?.message || "Failed to fetch models.");
-            }
-
-            const data = await response.json();
-            const models = data.data
-                .filter((m: any) => {
-                    const toolSupportedFamilies = ['gpt-4o', 'gpt-4-turbo', 'claude-3-5', 'claude-3-sonnet', 'claude-3-opus', 'gemini-1.5', 'gemini-pro', 'llama-3.1', 'llama-3.3', 'mistral-large', 'qwen-2.5', 'command-r', 'deepseek-v3'];
-                    const idLower = m.id.toLowerCase();
-                    const nameLower = (m.name || "").toLowerCase();
-                    const descLower = (m.description || "").toLowerCase();
-                    const matchesFamily = toolSupportedFamilies.some(family => idLower.includes(family) || nameLower.includes(family));
-                    const mentionsTools = descLower.includes("tool use") || descLower.includes("function calling") || descLower.includes("tool support");
-                    return matchesFamily || mentionsTools;
-                })
-                .map((m: any) => ({ id: m.id, name: m.name || m.id, isMultimodal: (m.description || "").toLowerCase().includes("vision") || (m.description || "").toLowerCase().includes("multimodal") }))
-                .sort((a: any, b: any) => a.name.localeCompare(b.name));
-
-            setOrModels(models);
-            setIsValidated(true);
-        } catch (e: any) {
-            setOrError(e.message);
-            setIsValidated(false);
-        } finally {
-            setIsFetchingOr(false);
-        }
-    };
+    const GEMINI_VOICES = [
+        { id: 'Puck', label: 'Puck (Youthful & Bright)' },
+        { id: 'Charon', label: 'Charon (Deep & Resonant)' },
+        { id: 'Kore', label: 'Kore (Clear & Professional)' },
+        { id: 'Fenrir', label: 'Fenrir (Stoic & Measured)' },
+        { id: 'Zephyr', label: 'Zephyr (Warm & Airy)' }
+    ];
 
     return (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
             <div className="w-full max-w-lg bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
                 <div className="px-6 py-4 border-b border-zinc-800 flex justify-between items-center bg-zinc-800/50">
-                    <h3 className="text-lg font-bold text-white">Advanced Settings</h3>
+                    <h3 className="text-lg font-bold text-white">System Configuration</h3>
                     <button onClick={onClose} className="text-zinc-500 hover:text-zinc-300"><XMarkIcon className="w-5 h-5" /></button>
                 </div>
                 <div className="p-6 space-y-6 max-h-[75vh] overflow-y-auto scrollbar-thin scrollbar-thumb-zinc-700">
                     
+                    {/* Voice Protocol Section */}
+                    <section className="space-y-4">
+                        <div className="flex items-center gap-2">
+                            <MusicalNoteIcon className="w-4 h-4 text-pink-500" />
+                            <h4 className="text-sm font-bold text-zinc-200 uppercase tracking-widest">Voice Protocol</h4>
+                        </div>
+                        <div className="p-4 bg-zinc-950/50 rounded-xl border border-zinc-800 space-y-4">
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Voice Engine</label>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <button 
+                                        onClick={() => handleChange('voiceEngine', 'gemini')}
+                                        className={`px-3 py-2 text-[10px] font-black uppercase rounded-lg border transition-all ${settings.voiceEngine === 'gemini' ? 'bg-blue-600/10 border-blue-500/50 text-blue-100' : 'bg-black/20 border-zinc-800 text-zinc-600'}`}
+                                    >
+                                        Gemini Native
+                                    </button>
+                                    <button 
+                                        onClick={() => handleChange('voiceEngine', 'elevenlabs')}
+                                        className={`px-3 py-2 text-[10px] font-black uppercase rounded-lg border transition-all ${settings.voiceEngine === 'elevenlabs' ? 'bg-orange-600/10 border-orange-500/50 text-orange-100' : 'bg-black/20 border-zinc-800 text-zinc-600'}`}
+                                    >
+                                        ElevenLabs
+                                    </button>
+                                </div>
+                            </div>
+
+                            {settings.voiceEngine === 'gemini' ? (
+                                <div className="space-y-2 animate-in slide-in-from-top-2 duration-300">
+                                    <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Selected Voice</label>
+                                    <select 
+                                        value={settings.liveVoice} 
+                                        onChange={(e) => handleChange('liveVoice', e.target.value)}
+                                        className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500 appearance-none"
+                                    >
+                                        {GEMINI_VOICES.map(v => (
+                                            <option key={v.id} value={v.id}>{v.label}</option>
+                                        ))}
+                                    </select>
+                                    <div className="flex items-center gap-2 px-1 text-[9px] text-zinc-500">
+                                        <InformationCircleIcon className="w-3 h-3" />
+                                        <span>Gemini voices provide the lowest latency for real-time interactions.</span>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="space-y-3 animate-in slide-in-from-top-2 duration-300">
+                                    <div className="space-y-2">
+                                        <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">ElevenLabs API Key</label>
+                                        <div className="relative">
+                                            <input 
+                                                type={showKey ? "text" : "password"}
+                                                placeholder="elevenlabs_..."
+                                                value={settings.elevenLabsKey || ''}
+                                                onChange={(e) => handleChange('elevenLabsKey', e.target.value)}
+                                                className="w-full bg-zinc-900 border border-zinc-700 rounded-lg pl-3 pr-10 py-2 text-xs text-white focus:outline-none focus:border-orange-500"
+                                            />
+                                            <button onClick={() => setShowKey(!showKey)} className="absolute right-3 top-2.5 text-zinc-500 hover:text-white">
+                                                <EyeIcon className="w-4 h-4" />
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Voice ID</label>
+                                        <input 
+                                            type="text"
+                                            placeholder="e.g. 21m00Tcm4TlvDq8ikWAM"
+                                            value={settings.elevenLabsVoiceId || ''}
+                                            onChange={(e) => handleChange('elevenLabsVoiceId', e.target.value)}
+                                            className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-orange-500"
+                                        />
+                                    </div>
+                                    <div className="flex items-center gap-2 px-1 text-[9px] text-zinc-500">
+                                        <InformationCircleIcon className="w-3 h-3" />
+                                        <span>High-fidelity voices from ElevenLabs. Requires an active API key.</span>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </section>
+
+                    <hr className="border-zinc-800" />
+
                     <section className="space-y-4">
                         <div className="flex items-center gap-2">
                             <CpuChipIcon className="w-4 h-4 text-blue-400" />
-                            <h4 className="text-sm font-bold text-zinc-200 uppercase tracking-widest">Global Parameters</h4>
+                            <h4 className="text-sm font-bold text-zinc-200 uppercase tracking-widest">Model Parameters</h4>
                         </div>
                         <div className="space-y-4 p-4 bg-zinc-950/50 rounded-xl border border-zinc-800">
                             <div>
@@ -201,7 +202,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, s
                                     onChange={(e) => handleChange('thinkingBudget', parseInt(e.target.value))}
                                     className="w-full h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-purple-500"
                                 />
-                                <p className="text-[8px] text-zinc-600 mt-1 italic">Controls reasoning depth for Gemini 3 series.</p>
                             </div>
                         </div>
                     </section>
@@ -210,18 +210,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, s
 
                     <section className="space-y-4">
                         <div className="flex items-center gap-2">
-                            <BoltIcon className="w-4 h-4 text-amber-400" />
-                            <h4 className="text-sm font-bold text-zinc-200 uppercase tracking-widest">External Credentials</h4>
+                            <KeyIcon className="w-4 h-4 text-amber-400" />
+                            <h4 className="text-sm font-bold text-zinc-200 uppercase tracking-widest">Access Credentials</h4>
                         </div>
                         <div className="space-y-3 p-4 bg-zinc-950/50 rounded-xl border border-zinc-800">
                             <div className="space-y-2">
-                                <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">OpenRouter API Key</label>
+                                <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Gemini API Key</label>
                                 <div className="relative">
                                     <input 
                                         type={showKey ? "text" : "password"}
-                                        placeholder="sk-or-v1-..."
-                                        value={settings.openRouterKey}
-                                        onChange={(e) => handleChange('openRouterKey', e.target.value)}
+                                        placeholder="AIzaSy..."
+                                        value={settings.geminiKey || ''}
+                                        onChange={(e) => handleChange('geminiKey', e.target.value)}
                                         className="w-full bg-zinc-900 border border-zinc-700 rounded-lg pl-3 pr-10 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
                                     />
                                     <button onClick={() => setShowKey(!showKey)} className="absolute right-3 top-2.5 text-zinc-500 hover:text-white">
@@ -230,12 +230,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, s
                                 </div>
                             </div>
                             <div className="space-y-2">
-                                <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">ElevenLabs API Key</label>
+                                <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">OpenRouter API Key</label>
                                 <input 
-                                    type="password"
-                                    placeholder="elevenlabs_..."
-                                    value={settings.elevenLabsKey}
-                                    onChange={(e) => handleChange('elevenLabsKey', e.target.value)}
+                                    type={showKey ? "text" : "password"}
+                                    placeholder="sk-or-v1-..."
+                                    value={settings.openRouterKey}
+                                    onChange={(e) => handleChange('openRouterKey', e.target.value)}
                                     className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
                                 />
                             </div>
@@ -243,7 +243,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, s
                     </section>
                 </div>
                 <div className="px-6 py-4 border-t border-zinc-800 bg-zinc-800/20 flex justify-end">
-                    <button onClick={onClose} className="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg transition-all shadow-lg shadow-blue-900/20">Save & Close</button>
+                    <button onClick={onClose} className="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg transition-all shadow-lg shadow-blue-900/20">Apply & Sync</button>
                 </div>
             </div>
         </div>
