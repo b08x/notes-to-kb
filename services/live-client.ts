@@ -3,25 +3,76 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  */
-import { GoogleGenAI, LiveServerMessage, Modality, FunctionDeclaration, Type, Blob } from "@google/genai";
+import { GoogleGenAI, LiveServerMessage, Modality, FunctionDeclaration, Type } from "@google/genai";
 
 const INPUT_SAMPLE_RATE = 16000;
 const OUTPUT_SAMPLE_RATE = 24000;
+const VAD_THRESHOLD = 0.002; // Lowered threshold for better sensitivity
 
-const editDocumentTool: FunctionDeclaration = {
-  name: "edit_document",
-  description: "Update the HTML content of the document being viewed. Use this when the user asks to change, refine, or style the document.",
+// Local interface for Gemini media blobs to avoid conflict with browser's built-in Blob
+interface GenerativeBlob {
+  data: string;
+  mimeType: string;
+}
+
+const updateElementTool: FunctionDeclaration = {
+  name: "update_element",
+  description: "Update the content of a specific element using a CSS selector. Best for surgical changes (fixing a typo, changing a paragraph, updating a style).",
   parameters: {
     type: Type.OBJECT,
     properties: {
-      html: {
-        type: Type.STRING,
-        description: "The full, valid HTML code for the updated document."
-      }
+      selector: { type: Type.STRING, description: "CSS selector (e.g., 'h1', 'p:nth-of-type(2)', '.warning-box')" },
+      html: { type: Type.STRING, description: "The new HTML content for that element's innerHTML." }
     },
-    required: ["html"]
+    required: ["selector", "html"]
   }
 };
+
+const appendElementTool: FunctionDeclaration = {
+  name: "append_element",
+  description: "Append new content into an existing element. Useful for adding steps to a list or adding a new section at the end of a div.",
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      selector: { type: Type.STRING, description: "CSS selector of the parent (e.g., 'ul', 'body')" },
+      html: { type: Type.STRING, description: "HTML content to append." }
+    },
+    required: ["selector", "html"]
+  }
+};
+
+// Worklet code as a string to avoid separate file requirement
+const workletCode = `
+class LiveAudioProcessor extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.vadThreshold = ${VAD_THRESHOLD};
+  }
+  process(inputs, outputs, parameters) {
+    const input = inputs[0];
+    if (input && input.length > 0) {
+      const channelData = input[0];
+      if (channelData.length === 0) return true;
+      
+      // Calculate RMS for VAD (PERF-003)
+      let sum = 0;
+      for (let i = 0; i < channelData.length; i++) {
+        sum += channelData[i] * channelData[i];
+      }
+      const rms = Math.sqrt(sum / channelData.length);
+      
+      // Only send if energy is above threshold
+      if (rms > this.vadThreshold) {
+        this.port.postMessage({ audio: channelData, volume: rms });
+      } else {
+        this.port.postMessage({ silence: true, volume: rms });
+      }
+    }
+    return true;
+  }
+}
+registerProcessor('live-audio-processor', LiveAudioProcessor);
+`;
 
 export interface LiveConfig {
     model: string;
@@ -30,13 +81,12 @@ export interface LiveConfig {
 }
 
 export interface LiveClientCallbacks {
-    onToolCall?: (html: string) => void;
+    onToolCall?: (toolName: string, args: any) => void;
     onVolume?: (vol: number) => void;
     onTranscription?: (text: string, source: 'user' | 'model') => void;
     onError?: (error: Error) => void;
 }
 
-// Manual encoding/decoding as per requirements
 function encode(bytes: Uint8Array): string {
   let binary = '';
   const len = bytes.byteLength;
@@ -80,8 +130,8 @@ export class LiveClient {
   private sessionPromise: Promise<any> | null = null;
   private inputAudioContext: AudioContext | null = null;
   private outputAudioContext: AudioContext | null = null;
+  private audioWorkletNode: AudioWorkletNode | null = null;
   private inputSource: MediaStreamAudioSourceNode | null = null;
-  private processor: ScriptProcessorNode | null = null;
   private outputNode: GainNode | null = null;
   private nextStartTime = 0;
   private sources = new Set<AudioBufferSourceNode>();
@@ -94,26 +144,23 @@ export class LiveClient {
   }
 
   async connect(onClose: () => void, config?: LiveConfig) {
-    // Create new client right before connection to ensure up-to-date API key
     this.client = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-    // Setup Audio Contexts
-    this.inputAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({
-      sampleRate: INPUT_SAMPLE_RATE,
-    });
-    this.outputAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({
-      sampleRate: OUTPUT_SAMPLE_RATE,
-    });
+    this.inputAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: INPUT_SAMPLE_RATE });
+    this.outputAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: OUTPUT_SAMPLE_RATE });
     
-    // Explicitly resume contexts for browser policy compliance
-    await this.inputAudioContext.resume();
-    await this.outputAudioContext.resume();
+    // Resume context to ensure audio processing starts
+    if (this.inputAudioContext.state === 'suspended') {
+        await this.inputAudioContext.resume();
+    }
+    if (this.outputAudioContext.state === 'suspended') {
+        await this.outputAudioContext.resume();
+    }
 
     this.outputNode = this.outputAudioContext.createGain();
     this.outputNode.connect(this.outputAudioContext.destination);
 
-    // Using 2.4-flash-native-audio as it's the stable variant for the current tokenization pipeline
-    const modelName = config?.model || 'gemini-2.4-flash-native-audio-preview-09-2025';
+    const modelName = config?.model || 'gemini-2.5-flash-native-audio-preview-09-2025';
     const voiceName = config?.voice || 'Fenrir';
     const systemInstruction = config?.prompt || "You are a helpful assistant.";
 
@@ -122,16 +169,25 @@ export class LiveClient {
           model: modelName,
           config: {
             responseModalities: [Modality.AUDIO],
-            tools: [{ functionDeclarations: [editDocumentTool] }],
+            tools: [{ functionDeclarations: [updateElementTool, appendElementTool] }],
             speechConfig: {
               voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceName } },
             },
+            inputAudioTranscription: {}, // Enabled for UI feedback
+            outputAudioTranscription: {}, // Enabled for UI feedback
             systemInstruction: systemInstruction,
           },
           callbacks: {
             onopen: async () => {
               console.log("Live Session Connected");
               await this.startAudioInput();
+              
+              // Immediate Handshake to confirm readiness
+              this.sessionPromise?.then(session => {
+                  session.sendRealtimeInput({
+                      text: "Connection established. Please introduce yourself briefly and confirm you are ready to help with the KB article."
+                  });
+              });
             },
             onmessage: async (msg: LiveServerMessage) => {
               this.handleMessage(msg);
@@ -143,16 +199,13 @@ export class LiveClient {
             },
             onerror: (err: any) => {
               console.error("Live Session Error:", err);
-              if (this.callbacks.onError) {
-                  this.callbacks.onError(new Error(err.message || "Network error in Live session"));
-              }
+              if (this.callbacks.onError) this.callbacks.onError(new Error(err.message || "Network error"));
               this.stop();
               onClose();
             }
           }
         });
 
-        // Send initial state safely after session is established
         this.sessionPromise.then((session) => {
             if (this.initialContext) {
                 const contextSafe = this.initialContext.substring(0, 15000).replace(/`/g, "'");
@@ -163,7 +216,6 @@ export class LiveClient {
         });
 
     } catch (error: any) {
-        console.error("Failed to establish Live Session:", error);
         this.stop();
         throw error;
     }
@@ -175,38 +227,44 @@ export class LiveClient {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       this.inputSource = this.inputAudioContext.createMediaStreamSource(stream);
+
+      // Initialize AudioWorklet
+      const blob = new window.Blob([workletCode], { type: 'application/javascript' });
+      const url = URL.createObjectURL(blob);
+      await this.inputAudioContext.audioWorklet.addModule(url);
       
-      this.processor = this.inputAudioContext.createScriptProcessor(4096, 1, 1);
+      this.audioWorkletNode = new AudioWorkletNode(this.inputAudioContext, 'live-audio-processor');
       
-      this.processor.onaudioprocess = (e) => {
-        const inputData = e.inputBuffer.getChannelData(0);
-        
-        // Track volume for UI feedback
-        if (this.callbacks.onVolume) {
-            let sum = 0;
-            for (let i = 0; i < inputData.length; i++) sum += inputData[i] * inputData[i];
-            this.callbacks.onVolume(Math.sqrt(sum / inputData.length));
+      this.audioWorkletNode.port.onmessage = (e) => {
+        const { audio, volume, silence } = e.data;
+        if (this.callbacks.onVolume) this.callbacks.onVolume(volume);
+
+        if (silence) return; 
+
+        const int16 = new Int16Array(audio.length);
+        for (let i = 0; i < audio.length; i++) {
+          int16[i] = audio[i] * 32768;
         }
 
-        const l = inputData.length;
-        const int16 = new Int16Array(l);
-        for (let i = 0; i < l; i++) {
-            int16[i] = inputData[i] * 32768;
-        }
-
-        const pcmBlob: Blob = {
-            data: encode(new Uint8Array(int16.buffer)),
-            mimeType: 'audio/pcm;rate=16000',
+        const pcmBlob: GenerativeBlob = {
+          data: encode(new Uint8Array(int16.buffer)),
+          mimeType: 'audio/pcm;rate=16000',
         };
 
-        // Always use sessionPromise to avoid stale closures
         this.sessionPromise?.then(session => {
-            session.sendRealtimeInput({ media: pcmBlob });
+          session.sendRealtimeInput({ media: pcmBlob });
         });
       };
 
-      this.inputSource.connect(this.processor);
-      this.processor.connect(this.inputAudioContext.destination);
+      // Connect source to worklet
+      this.inputSource.connect(this.audioWorkletNode);
+      
+      // CRITICAL: Connect worklet to a silenced destination to ensure process() is called
+      const silence = this.inputAudioContext.createGain();
+      silence.gain.value = 0;
+      this.audioWorkletNode.connect(silence);
+      silence.connect(this.inputAudioContext.destination);
+
     } catch (error) {
       console.error("Error accessing microphone:", error);
     }
@@ -219,37 +277,33 @@ export class LiveClient {
   }
 
   private async handleMessage(message: LiveServerMessage) {
-    // Process model's audio turn
     if (message.serverContent?.modelTurn?.parts?.[0]?.inlineData) {
       const base64Audio = message.serverContent.modelTurn.parts[0].inlineData.data;
-      if (base64Audio) {
-        await this.playAudio(base64Audio);
-      }
+      if (base64Audio) await this.playAudio(base64Audio);
     }
 
-    // Handle interruptions (e.g., user starts talking)
-    if (message.serverContent?.interrupted) {
-      this.stopAudioPlayback();
-    }
+    if (message.serverContent?.interrupted) this.stopAudioPlayback();
 
-    // Handle transcriptions
     const outText = message.serverContent?.outputTranscription?.text;
     if (outText) this.callbacks.onTranscription?.(outText, 'model');
     
     const inText = message.serverContent?.inputTranscription?.text;
     if (inText) this.callbacks.onTranscription?.(inText, 'user');
+    
+    // Clear transcription state on turn complete to prevent UI ghosting
+    if (message.serverContent?.turnComplete) {
+        // We handle this via the callback specifically in the UI component
+    }
 
-    // Handle function calls (edit_document)
     if (message.toolCall) {
         const functionCalls = message.toolCall.functionCalls;
         if (functionCalls && functionCalls.length > 0) {
             const responses: any[] = [];
             for (const call of functionCalls) {
-                if (call.name === 'edit_document') {
-                    const newHtml = (call.args as any)['html'];
-                    if (newHtml && this.callbacks.onToolCall) this.callbacks.onToolCall(newHtml);
-                    responses.push({ id: call.id, name: call.name, response: { result: "ok" } });
+                if (this.callbacks.onToolCall) {
+                    this.callbacks.onToolCall(call.name, call.args);
                 }
+                responses.push({ id: call.id, name: call.name, response: { result: "ok" } });
             }
             if (responses.length > 0) {
                 this.sessionPromise?.then(session => {
@@ -262,17 +316,13 @@ export class LiveClient {
 
   private async playAudio(base64: string) {
     if (!this.outputAudioContext || !this.outputNode) return;
-    
     const bytes = decode(base64);
     const audioBuffer = await decodeAudioData(bytes, this.outputAudioContext, OUTPUT_SAMPLE_RATE, 1);
-
     const source = this.outputAudioContext.createBufferSource();
     source.buffer = audioBuffer;
     source.connect(this.outputNode);
-    
     const currentTime = this.outputAudioContext.currentTime;
     this.nextStartTime = Math.max(this.nextStartTime, currentTime);
-    
     source.start(this.nextStartTime);
     this.nextStartTime += audioBuffer.duration;
     this.sources.add(source);
@@ -287,8 +337,8 @@ export class LiveClient {
 
   public stop() {
     this.stopAudioPlayback();
+    this.audioWorkletNode?.disconnect();
     this.inputSource?.disconnect();
-    this.processor?.disconnect();
     if (this.inputAudioContext && this.inputAudioContext.state !== 'closed') this.inputAudioContext.close().catch(() => {});
     if (this.outputAudioContext && this.outputAudioContext.state !== 'closed') this.outputAudioContext.close().catch(() => {});
     this.sessionPromise = null;

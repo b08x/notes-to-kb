@@ -38,17 +38,15 @@ const App: React.FC = () => {
   const [generationStatus, setGenerationStatus] = useState<string>("");
   const [streamSize, setStreamSize] = useState<number>(0);
   
-  // Live State - Now initialized as false, activated upon first generation
   const [isLiveActive, setIsLiveActive] = useState(false);
   const livePulseRef = useRef<any>(null);
   
-  // Settings & Help State
   const [showSettings, setShowSettings] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [appSettings, setAppSettings] = useState<AppSettings>({
       provider: 'gemini',
       enableLiveApi: true,
-      liveModel: 'gemini-2.4-flash-native-audio-preview-09-2025',
+      liveModel: 'gemini-2.5-flash-native-audio-preview-09-2025',
       liveVoice: 'Fenrir',
       livePromptMode: 'witty',
       customLivePrompt: '',
@@ -76,68 +74,81 @@ const App: React.FC = () => {
       setProjects(prev => prev.map(p => p.id === activeProjectId ? { ...updater(p), lastModified: new Date() } : p));
   };
 
+  // Fix: Added missing project management handlers
   const handleNewProject = () => {
-      const newProject: ProjectData = {
+    const newProject: ProjectData = {
+      id: crypto.randomUUID(),
+      name: 'Untitled Project',
+      lastModified: new Date(),
+      messages: [],
+      activeCreation: null,
+      imageMap: {}
+    };
+    setProjects(prev => [...prev, newProject]);
+    setActiveProjectId(newProject.id);
+  };
+
+  const handleDeleteProject = (id: string) => {
+    setProjects(prev => {
+      const newProjects = prev.filter(p => p.id !== id);
+      if (newProjects.length === 0) {
+        const defaultProject: ProjectData = {
           id: crypto.randomUUID(),
-          name: 'New Session',
+          name: 'Untitled Project',
           lastModified: new Date(),
           messages: [],
           activeCreation: null,
           imageMap: {}
-      };
-      setProjects(prev => [newProject, ...prev]);
-      setActiveProjectId(newProject.id);
-      setIsLiveActive(false); // Reset live state for new clean session
-  };
-
-  const handleDeleteProject = (id: string) => {
-      const newProjects = projects.filter(p => p.id !== id);
-      setProjects(newProjects);
-      if (activeProjectId === id && newProjects.length > 0) {
-          setActiveProjectId(newProjects[0].id);
+        };
+        setActiveProjectId(defaultProject.id);
+        return [defaultProject];
       }
-  };
-
-  const fileToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = () => {
-        if (typeof reader.result === 'string') {
-          resolve(reader.result.split(',')[1]);
-        } else {
-          reject(new Error('Failed to convert file to base64'));
-        }
-      };
-      reader.onerror = (error) => reject(error);
+      if (activeProjectId === id) {
+        setActiveProjectId(newProjects[0].id);
+      }
+      return newProjects;
     });
   };
-  
-  const blobUrlToBase64 = async (url: string): Promise<string> => {
-      const response = await fetch(url);
-      const blob = await response.blob();
-      return new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.readAsDataURL(blob);
-          reader.onload = () => resolve((reader.result as string).split(',')[1]);
-          reader.onerror = reject;
+
+  const handleUpdateArtifact = (id: string, html: string, isManualEdit: boolean = false) => {
+      updateActiveProject(p => {
+          const newMessages = p.messages.map(m => (m.artifact?.id === id ? { ...m, artifact: { ...m.artifact, html } } : m));
+          const newActiveCreation = p.activeCreation?.id === id ? { ...p.activeCreation, html } : p.activeCreation;
+          return { ...p, messages: newMessages, activeCreation: newActiveCreation };
       });
+      
+      if (isManualEdit && isLiveActive && livePulseRef.current) {
+          livePulseRef.current.sendUpdate(`[SYSTEM] User manually updated the document. NEW_STATE:\n\`\`\`html\n${html.substring(0, 15000)}\n\`\`\``);
+      }
   };
 
-  const extractTextFromPdf = async (file: File): Promise<string> => {
-      try {
-          const arrayBuffer = await file.arrayBuffer();
-          const pdf = await (window as any).pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-          let fullText = "";
-          for (let i = 1; i <= pdf.numPages; i++) {
-              const page = await pdf.getPage(i);
-              const content = await page.getTextContent();
-              fullText += content.items.map((item: any) => item.str).join(" ") + "\n";
-          }
-          return fullText;
-      } catch (err) {
-          return "[PDF Text Extraction Failed]";
-      }
+  // Atomic HTML Patching Logic (PERF-001)
+  const handleAtomicUpdate = (toolName: string, args: any) => {
+    if (!activeProject.activeCreation) return;
+    const { id, html: currentHtml } = activeProject.activeCreation;
+    
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(currentHtml, 'text/html');
+    
+    try {
+        if (toolName === 'update_element') {
+            const target = doc.querySelector(args.selector);
+            if (target) {
+                target.innerHTML = args.html;
+            } else {
+                console.warn(`Atomic Update: Selector ${args.selector} not found.`);
+                return;
+            }
+        } else if (toolName === 'append_element') {
+            const target = doc.querySelector(args.selector) || doc.body;
+            target.insertAdjacentHTML('beforeend', args.html);
+        }
+
+        const updatedHtml = doc.documentElement.outerHTML;
+        handleUpdateArtifact(id, updatedHtml, false);
+    } catch (e) {
+        console.error("Atomic Update Failed:", e);
+    }
   };
 
   const handleSendMessage = async (text: string, files: File[] = [], fileType: 'source' | 'screenshot' = 'source', templateType: string = 'auto') => {
@@ -145,10 +156,7 @@ const App: React.FC = () => {
     setGenerationStatus("Synthesizing Input Context");
     setStreamSize(0);
     
-    // Activate Live Assistant the moment generation is triggered
-    if (appSettings.enableLiveApi) {
-        setIsLiveActive(true);
-    }
+    if (appSettings.enableLiveApi) setIsLiveActive(true);
     
     const pastMessages = [...activeProject.messages];
     const newUserMsg: Message = {
@@ -170,13 +178,25 @@ const App: React.FC = () => {
       const newImageMapEntries: Record<string, string> = {};
 
       for (const file of files) {
-          const base64 = await fileToBase64(file);
+          const reader = new FileReader();
+          const base64 = await new Promise<string>((resolve) => {
+              reader.onload = () => resolve((reader.result as string).split(',')[1]);
+              reader.readAsDataURL(file);
+          });
           const id = `img-${crypto.randomUUID().substring(0, 8)}`; 
+          
           let extractedText: string | undefined;
-
           if (file.type === 'application/pdf') {
               setGenerationStatus(`Parsing ${file.name}`);
-              extractedText = await extractTextFromPdf(file);
+              const arrayBuffer = await file.arrayBuffer();
+              const pdf = await (window as any).pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+              let fullText = "";
+              for (let i = 1; i <= pdf.numPages; i++) {
+                  const page = await pdf.getPage(i);
+                  const content = await page.getTextContent();
+                  fullText += content.items.map((item: any) => item.str).join(" ") + "\n";
+              }
+              extractedText = fullText;
           }
           
           geminiAttachments.push({ data: base64, mimeType: file.type, id, extractedText });
@@ -193,10 +213,14 @@ const App: React.FC = () => {
           if (m.attachments) {
               for (const att of m.attachments) {
                   if (att.type === 'image') {
-                      try {
-                        const b64 = await blobUrlToBase64(att.url);
-                        histImages.push({ data: b64, mimeType: 'image/png' });
-                      } catch (e) {}
+                      const response = await fetch(att.url);
+                      const blob = await response.blob();
+                      const b64 = await new Promise<string>((resolve) => {
+                          const reader = new FileReader();
+                          reader.onload = () => resolve((reader.result as string).split(',')[1]);
+                          reader.readAsDataURL(blob);
+                      });
+                      histImages.push({ data: b64, mimeType: 'image/png' });
                   }
               }
           }
@@ -204,16 +228,9 @@ const App: React.FC = () => {
           return { role: m.role, text: textContent, images: histImages };
       }));
 
-      let modifiedText = text;
-      if (files.length > 0 && fileType === 'screenshot') {
-        modifiedText = `[ANALYSIS] Analyze UI context. ${text}`;
-      } else if (activeProject.activeCreation) {
-        modifiedText = `[REFINEMENT] Update existing article. ${text}`;
-      }
-
       const html = await bringToLife(
           historyForGemini, 
-          modifiedText, 
+          text, 
           geminiAttachments, 
           templateType, 
           (partialText) => setStreamSize(partialText.length),
@@ -258,19 +275,6 @@ const App: React.FC = () => {
     }
   };
 
-  const handleUpdateArtifact = (id: string, html: string, isManualEdit: boolean = false) => {
-      updateActiveProject(p => {
-          const newMessages = p.messages.map(m => (m.artifact?.id === id ? { ...m, artifact: { ...m.artifact, html } } : m));
-          const newActiveCreation = p.activeCreation?.id === id ? { ...p.activeCreation, html } : p.activeCreation;
-          return { ...p, messages: newMessages, activeCreation: newActiveCreation };
-      });
-      
-      // BUG-001: Sync manual edits to Live Assistant context
-      if (isManualEdit && isLiveActive && livePulseRef.current) {
-          livePulseRef.current.sendUpdate(`[SYSTEM] User manually updated the document. NEW_STATE:\n\`\`\`html\n${html.substring(0, 15000)}\n\`\`\``);
-      }
-  };
-
   return (
     <div className="flex h-screen w-full bg-[#09090b] text-zinc-100 overflow-hidden font-sans">
       {!isInitialState && (
@@ -291,7 +295,6 @@ const App: React.FC = () => {
       )}
       
       <main className="flex-1 flex flex-col min-w-0 relative">
-        {/* Initial View Settings Shortcut */}
         {isInitialState && (
             <button 
                 onClick={() => setShowSettings(true)}
@@ -344,13 +347,12 @@ const App: React.FC = () => {
         </div>
       </main>
 
-      {/* Persistent Floating Live Pulse Pop-up - Positioned top-right to avoid blocking buttons */}
       <LivePulse 
           ref={livePulseRef}
           isActive={isLiveActive}
           onClose={() => setIsLiveActive(false)}
           currentHtml={activeProject.activeCreation?.html}
-          onUpdateHtml={(html) => handleUpdateArtifact(activeProject.activeCreation?.id || '', html)}
+          onAtomicUpdate={handleAtomicUpdate}
           mode="overlay"
           liveConfig={{
               model: appSettings.liveModel,
