@@ -3,7 +3,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  */
-import { GoogleGenAI, FunctionDeclaration, Type } from "@google/genai";
+import { GoogleGenAI, FunctionDeclaration, Type, Chat } from "@google/genai";
 import { ElevenLabsTTS } from "./elevenlabs";
 import { GeminiNativeTTS } from "./gemini-tts";
 
@@ -33,9 +33,6 @@ const appendElementTool: FunctionDeclaration = {
   }
 };
 
-/**
- * Parses complex API error responses into human-readable strings.
- */
 function parseError(error: any): string {
     const rawMessage = error.message || String(error);
     if (rawMessage.includes("Failed to fetch")) return "Network connection failed. Reconnecting...";
@@ -112,6 +109,8 @@ export interface LiveClientCallbacks {
 
 export class LiveClient {
   private ai: GoogleGenAI | null = null;
+  private chat: Chat | null = null;
+  private orHistory: any[] = [];
   private recognition: any = null;
   private ttsService: ElevenLabsTTS | GeminiNativeTTS | null = null;
   private currentConfig: LiveConfig | null = null;
@@ -137,9 +136,26 @@ export class LiveClient {
 
   async connect(onClose: () => void, config: LiveConfig) {
     this.currentConfig = { ...config, model: this.sanitizeModel(config.model) };
+    
+    // Performance Optimization: Cache context in systemInstruction for Gemini
     if (this.currentConfig.provider === 'gemini') {
         this.ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        this.chat = this.ai.chats.create({
+            model: this.currentConfig.model,
+            config: {
+                systemInstruction: `${config.prompt}\n\nDOCUMENT_CONTEXT:\n${this.initialContext}`,
+                tools: [{ functionDeclarations: [updateElementTool, appendElementTool] }],
+                temperature: 0.3
+            }
+        });
+    } else {
+        // Init OpenRouter history with persistent context
+        this.orHistory = [{ 
+            role: 'system', 
+            content: `${config.prompt}\n\nDOCUMENT_CONTEXT:\n${this.initialContext}` 
+        }];
     }
+
     this.isConnected = true;
 
     if (config.voiceEngine === 'elevenlabs' && config.elevenLabs?.key) {
@@ -185,7 +201,7 @@ export class LiveClient {
 
     this.recognition.onerror = (event: any) => {
         if (event.error === 'no-speech') return;
-        console.warn("STT Error, attempting restart:", event.error);
+        console.warn("STT Error:", event.error);
         this.scheduleReconnect();
     };
 
@@ -232,16 +248,8 @@ export class LiveClient {
   }
 
   private async processWithGemini(text: string) {
-    if (!this.ai) return;
-    const stream = await this.ai.models.generateContentStream({
-        model: this.currentConfig?.model || 'gemini-3-flash-preview',
-        contents: [{ role: 'user', parts: [{ text: `DOCUMENT_CONTEXT:\n${this.initialContext}\n\nUSER_COMMAND: ${text}` }] }],
-        config: {
-            systemInstruction: this.currentConfig?.prompt,
-            tools: [{ functionDeclarations: [updateElementTool, appendElementTool] }],
-            temperature: 0.3
-        }
-    });
+    if (!this.chat) return;
+    const stream = await this.chat.sendMessageStream({ message: text });
 
     let fullModelResponse = "";
     let firstChunkReceived = false;
@@ -271,6 +279,8 @@ export class LiveClient {
     const apiKey = this.currentConfig?.openRouterKey;
     if (!apiKey) throw new Error("API Key missing.");
 
+    this.orHistory.push({ role: 'user', content: text });
+
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -281,10 +291,7 @@ export class LiveClient {
         },
         body: JSON.stringify({
             model: this.currentConfig?.model,
-            messages: [
-                { role: 'system', content: this.currentConfig?.prompt },
-                { role: 'user', content: `DOCUMENT_CONTEXT:\n${this.initialContext}\n\nUSER_COMMAND: ${text}` }
-            ],
+            messages: this.orHistory,
             tools: [
                 { type: 'function', function: { name: "update_element", description: updateElementTool.description, parameters: normalizeSchema(updateElementTool.parameters) } },
                 { type: 'function', function: { name: "append_element", description: appendElementTool.description, parameters: normalizeSchema(appendElementTool.parameters) } }
@@ -343,6 +350,7 @@ export class LiveClient {
             }
         }
     }
+    this.orHistory.push({ role: 'assistant', content: fullModelResponse });
     if (this.ttsService && 'flush' in this.ttsService) (this.ttsService as ElevenLabsTTS).flush();
   }
 
@@ -363,5 +371,6 @@ export class LiveClient {
     if (this.recognition) { try { this.recognition.stop(); } catch(e) {} }
     if (this.ttsService) this.ttsService.stop();
     this.ai = null;
+    this.chat = null;
   }
 }

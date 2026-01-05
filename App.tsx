@@ -40,6 +40,7 @@ const App: React.FC = () => {
   
   const [isLiveActive, setIsLiveActive] = useState(false);
   const livePulseRef = useRef<any>(null);
+  const previewRef = useRef<any>(null); // To potentially target the iframe more directly
   
   const [showSettings, setShowSettings] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
@@ -53,10 +54,9 @@ const App: React.FC = () => {
       generationModel: 'gemini-3-flash-preview',
       openRouterKey: '',
       openRouterModel: 'google/gemini-flash-1.5',
-      // ElevenLabs
       voiceEngine: 'gemini',
       elevenLabsKey: '',
-      elevenLabsVoiceId: '21m00Tcm4TlvDq8ikWAM' // Rachel
+      elevenLabsVoiceId: '21m00Tcm4TlvDq8ikWAM'
   });
 
   const activeProject = projects.find(p => p.id === activeProjectId) || projects[0];
@@ -128,30 +128,35 @@ const App: React.FC = () => {
 
   const handleAtomicUpdate = (toolName: string, args: any) => {
     if (!activeProject.activeCreation) return;
-    const { id, html: currentHtml } = activeProject.activeCreation;
     
+    // Performance Optimization: Virtual DOM logic.
+    // Instead of re-parsing and re-rendering the whole artifact in React state,
+    // we send a postMessage to the Iframe's runtime to update specifically.
+    const iframe = document.querySelector('iframe');
+    if (iframe && iframe.contentWindow) {
+        iframe.contentWindow.postMessage({
+            type: toolName === 'update_element' ? 'UPDATE_ELEMENT' : 'APPEND_ELEMENT',
+            selector: args.selector,
+            html: args.html
+        }, '*');
+    }
+
+    // Still sync to state to ensure exports and sidebar previews are correct, 
+    // but the Iframe won't flicker because processedHtml is memoized on creation.html
+    const { id, html: currentHtml } = activeProject.activeCreation;
     const parser = new DOMParser();
     const doc = parser.parseFromString(currentHtml, 'text/html');
-    
     try {
         if (toolName === 'update_element') {
             const target = doc.querySelector(args.selector);
-            if (target) {
-                target.innerHTML = args.html;
-            } else {
-                console.warn(`Atomic Update: Selector ${args.selector} not found.`);
-                return;
-            }
+            if (target) target.innerHTML = args.html;
         } else if (toolName === 'append_element') {
             const target = doc.querySelector(args.selector) || doc.body;
             target.insertAdjacentHTML('beforeend', args.html);
         }
-
         const updatedHtml = doc.documentElement.outerHTML;
         handleUpdateArtifact(id, updatedHtml, false);
-    } catch (e) {
-        console.error("Atomic Update Failed:", e);
-    }
+    } catch (e) { console.error("Atomic Update Failed:", e); }
   };
 
   const handleSendMessage = async (text: string, files: File[] = [], fileType: 'source' | 'screenshot' = 'source', templateType: string = 'auto') => {

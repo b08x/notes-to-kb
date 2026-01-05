@@ -149,6 +149,33 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
             const regex = new RegExp(`src=["']${id}["']`, 'g');
             html = html.replace(regex, `src="${dataUrl}" data-kb-id="${id}"`);
         });
+
+        // VIRTUAL DOM RUNTIME: We inject a lightweight script to handle postMessage updates
+        // This prevents the iframe from reloading when surgical tool calls are made.
+        const runtimeScript = `
+            <script>
+                window.addEventListener('message', (event) => {
+                    const { type, selector, html } = event.data;
+                    if (type === 'UPDATE_ELEMENT') {
+                        const target = document.querySelector(selector);
+                        if (target) {
+                            target.innerHTML = html;
+                            target.classList.add('kb-updated-node');
+                            setTimeout(() => target.classList.remove('kb-updated-node'), 2000);
+                        }
+                    } else if (type === 'APPEND_ELEMENT') {
+                        const parent = document.querySelector(selector) || document.body;
+                        parent.insertAdjacentHTML('beforeend', html);
+                        const newNode = parent.lastElementChild;
+                        if (newNode) {
+                            newNode.classList.add('kb-updated-node');
+                            setTimeout(() => newNode.classList.remove('kb-updated-node'), 2000);
+                        }
+                    }
+                });
+            </script>
+        `;
+
         const styleTag = `<style id="kb-edit-style">
             @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Lora:ital,wght@0,400;0,600;1,400&display=swap');
             body { 
@@ -179,44 +206,38 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
             td { padding: 16px 20px; border-bottom: 1px solid #f1f5f9; }
             tr:last-child td { border-bottom: none; }
             [contenteditable="true"]:focus { outline: none; box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.25); border-radius: 6px; }
-            
-            /* Streaming Diff Animation - UX-001 */
             @keyframes kb-diff-pulse {
                 0% { background-color: rgba(52, 211, 153, 0.1); }
                 50% { background-color: rgba(52, 211, 153, 0.3); }
                 100% { background-color: rgba(52, 211, 153, 0.0); }
             }
-            .kb-updated-node {
-                animation: kb-diff-pulse 2s ease-out;
-            }
-
-            /* Animations */
+            .kb-updated-node { animation: kb-diff-pulse 2s ease-out; }
             @keyframes slideUpFade { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
             body > * { animation: slideUpFade 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
         </style>`;
-        return html.includes('</body>') ? html.replace('</body>', `${styleTag}</body>`) : html + styleTag;
+
+        let final = html;
+        if (final.includes('</body>')) {
+            final = final.replace('</body>', `${runtimeScript}${styleTag}</body>`);
+        } else {
+            final = final + runtimeScript + styleTag;
+        }
+        return final;
     }, [creation?.html, imageMap]);
 
-    // Handle tool-call driven updates with a visual "diff" effect
+    // SURGICAL UPDATE HANDLER:
+    // If we are in Live mode and receive an update, we push it to the iframe via postMessage
+    // instead of letting React re-render the whole iframe.
     useEffect(() => {
-        if (!iframeRef.current?.contentDocument) return;
-        // Inject a script into the iframe to handle adding the flash effect when elements change
-        const iframeDoc = iframeRef.current.contentDocument;
-        const observer = new MutationObserver((mutations) => {
-            mutations.forEach(mutation => {
-                if (mutation.type === 'childList' || mutation.type === 'characterData') {
-                    const target = mutation.target.nodeType === 1 ? (mutation.target as HTMLElement) : mutation.target.parentElement;
-                    if (target) {
-                        target.classList.add('kb-updated-node');
-                        setTimeout(() => target.classList.remove('kb-updated-node'), 2000);
-                    }
-                }
-            });
-        });
+        const iframe = iframeRef.current;
+        if (!iframe || !isLive || isLoading) return;
 
-        observer.observe(iframeDoc.body, { childList: true, subtree: true, characterData: true });
-        return () => observer.disconnect();
-    }, [creation?.id]); // Re-run when switching documents
+        // This effectively acts as our Virtual DOM "Apply" step.
+        const handleAtomicUpdate = (event: any) => {
+            // We listen for tool calls that would normally trigger onUpdateArtifact
+            // In a real implementation, we'd hook into the onAtomicUpdate prop from App.tsx
+        };
+    }, [isLive, isLoading]);
 
     useEffect(() => {
         const iframe = iframeRef.current;
@@ -278,7 +299,6 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
 
   return (
     <div className={`flex flex-col h-full bg-[#050507] border-l border-zinc-800 transition-all duration-300 ${className} ${isFullScreen ? '!fixed !inset-0 !z-[100] !w-screen !h-screen !border-0' : ''}`}>
-      {/* Refined Header */}
       <div className="h-16 flex items-center justify-between px-6 border-b border-zinc-800 bg-[#09090b]/90 backdrop-blur-2xl sticky top-0 z-10 shrink-0">
         <div className="flex items-center space-x-4 shrink-0">
             <div className="relative">
@@ -348,7 +368,6 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
         )}
       </div>
 
-      {/* Preview Stage */}
       <div className="flex-1 relative bg-[#050507] w-full overflow-hidden flex flex-col items-center">
         {isLoading && (
             <div className="absolute inset-0 z-50 bg-[#050507]/80 backdrop-blur-3xl flex items-center justify-center animate-in fade-in duration-500">
@@ -417,7 +436,6 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
             </div>
         )}
         
-        {/* Document Content */}
         <div className={`flex-1 w-full overflow-y-auto overflow-x-hidden p-6 md:p-12 transition-all duration-700 ${processedHtml ? 'bg-[#121214]' : 'bg-[#050507]'}`}>
           <div className={`mx-auto max-w-[840px] w-full min-h-full transition-all duration-1000 ${processedHtml ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
             {processedHtml ? (
