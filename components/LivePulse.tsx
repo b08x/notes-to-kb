@@ -3,10 +3,10 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  */
-import { XMarkIcon, BoltIcon, ExclamationTriangleIcon, ChevronDownIcon } from '@heroicons/react/24/solid';
+import { XMarkIcon, BoltIcon, ExclamationTriangleIcon, ChevronDownIcon, MusicalNoteIcon, StopIcon } from '@heroicons/react/24/solid';
 import React, { useEffect, useRef, useState, useImperativeHandle, forwardRef } from 'react';
 import { LiveClient } from '../services/live-client';
-import { WITTY_PROMPT, PROFESSIONAL_PROMPT, LivePromptMode } from './SettingsModal';
+import { WITTY_PROMPT, PROFESSIONAL_PROMPT, LivePromptMode, VoiceEngine, Provider } from './SettingsModal';
 
 interface LivePulseProps {
   onClose: () => void;
@@ -19,6 +19,13 @@ interface LivePulseProps {
       voice: string;
       promptMode: LivePromptMode;
       customPrompt?: string;
+      provider: Provider;
+      openRouterKey?: string;
+      voiceEngine: VoiceEngine;
+      elevenLabs: {
+          key: string;
+          voiceId: string;
+      };
   };
 }
 
@@ -32,10 +39,9 @@ export const LivePulse = forwardRef<any, LivePulseProps>(({
 }, ref) => {
   const [volume, setVolume] = useState(0);
   const [isExpanded, setIsExpanded] = useState(true);
-  const [status, setStatus] = useState<'connecting' | 'active' | 'error' | 'key_required'>('connecting');
+  const [status, setStatus] = useState<'connecting' | 'listening' | 'thinking' | 'speaking' | 'error' | 'key_required'>('connecting');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   
-  // Transcriptions usually stream in segments. We need to handle this.
   const [userText, setUserText] = useState("");
   const [modelText, setModelText] = useState("");
   
@@ -48,11 +54,20 @@ export const LivePulse = forwardRef<any, LivePulseProps>(({
 
   useImperativeHandle(ref, () => ({
     sendUpdate: (text: string) => {
-      if (clientRef.current && status === 'active') {
+      if (clientRef.current && status !== 'connecting' && status !== 'error') {
         clientRef.current.sendText(text);
       }
     }
   }));
+
+  const handleStopAudio = () => {
+    if (clientRef.current) {
+        clientRef.current.stopAudio();
+        setModelText("");
+        setVolume(0);
+        setStatus('listening');
+    }
+  };
 
   const initSession = async () => {
     if (!isActive) return;
@@ -60,15 +75,6 @@ export const LivePulse = forwardRef<any, LivePulseProps>(({
     setErrorMessage(null);
 
     try {
-        const aiStudio = (window as any).aistudio;
-        if (aiStudio) {
-            const hasKey = await aiStudio.hasSelectedApiKey();
-            if (!hasKey) {
-                setStatus('key_required');
-                return;
-            }
-        }
-
         let prompt = WITTY_PROMPT;
         if (liveConfig.promptMode === 'professional') prompt = PROFESSIONAL_PROMPT;
         else if (liveConfig.promptMode === 'custom' && liveConfig.customPrompt) {
@@ -84,37 +90,34 @@ export const LivePulse = forwardRef<any, LivePulseProps>(({
                     }
                 },
                 onVolume: (vol) => setVolume(vol),
+                onStatusChange: (s) => setStatus(s as any),
                 onTranscription: (text, source) => {
                     if (source === 'user') {
                         setUserText(text);
-                        // When user speaks, clear the previous model response
                         setModelText(""); 
                     } else {
-                        setModelText(prev => prev + text);
+                        setModelText(text);
                     }
                 },
                 onError: (err) => {
-                    if (err.message.toLowerCase().includes("not found")) setStatus('key_required');
-                    else {
-                        setErrorMessage(err.message);
-                        setStatus('error');
-                    }
+                    setErrorMessage(err.message);
+                    setStatus('error');
                 }
             }
         );
         
         clientRef.current = client;
         await client.connect(() => {
-            if (status !== 'error' && status !== 'key_required') {
-                setStatus('error');
-                setErrorMessage("Session ended.");
-            }
+            onClose();
         }, {
-            model: liveConfig.model || 'gemini-2.5-flash-native-audio-preview-09-2025',
+            model: liveConfig.model || 'gemini-3-flash-preview',
             voice: liveConfig.voice,
-            prompt: prompt
+            prompt: prompt,
+            provider: liveConfig.provider,
+            openRouterKey: liveConfig.openRouterKey,
+            voiceEngine: liveConfig.voiceEngine,
+            elevenLabs: liveConfig.elevenLabs
         });
-        setStatus('active');
     } catch (e: any) {
         setStatus('error');
         setErrorMessage(e.message || "Connection failed.");
@@ -135,46 +138,116 @@ export const LivePulse = forwardRef<any, LivePulseProps>(({
 
   return (
     <div className={`fixed top-[100px] right-6 z-[150] flex flex-col items-end gap-3 transition-all duration-500 ${isExpanded ? 'w-[320px] sm:w-[380px]' : 'w-14 h-14'}`}>
-        <div className={`relative w-full flex flex-col overflow-hidden bg-[#121214]/90 backdrop-blur-xl rounded-2xl border border-zinc-700/50 shadow-2xl transition-all duration-500 ${isExpanded ? 'h-[260px] opacity-100' : 'h-0 opacity-0 pointer-events-none'}`}>
-            <div className={`absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 via-purple-500 to-blue-500 animate-[gradient_3s_linear_infinite] transition-opacity duration-500 ${status === 'active' ? 'opacity-100' : 'opacity-20'}`}></div>
-            <div className="flex items-center justify-between p-3 border-b border-white/5 bg-black/20">
+        <div className={`relative w-full flex flex-col overflow-hidden bg-[#121214]/95 backdrop-blur-2xl rounded-2xl border border-zinc-700 shadow-2xl transition-all duration-500 ${isExpanded ? 'h-[320px] opacity-100' : 'h-0 opacity-0 pointer-events-none'}`}>
+            <div className={`absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 via-purple-500 to-blue-500 animate-[gradient_3s_linear_infinite] transition-opacity duration-500 ${status !== 'connecting' && status !== 'error' ? 'opacity-100' : 'opacity-20'}`}></div>
+            
+            <div className="flex items-center justify-between p-3 border-b border-white/5 bg-black/40">
                 <div className="flex items-center gap-2">
-                    <div className={`w-2 h-2 rounded-full ${status === 'active' ? 'bg-emerald-500' : (status === 'error' ? 'bg-red-500' : 'bg-amber-400 animate-pulse')}`}></div>
-                    <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Live Pulse</span>
+                    <div className={`w-2.5 h-2.5 rounded-full ${status === 'listening' ? 'bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]' : (status === 'speaking' ? 'bg-blue-500 animate-bounce' : (status === 'thinking' ? 'bg-amber-400 animate-pulse' : 'bg-zinc-600'))}`}></div>
+                    <span className="text-[10px] font-black text-zinc-300 uppercase tracking-[0.15em]">
+                        {status === 'listening' ? 'Mic Active' : (status === 'thinking' ? 'Processing' : (status === 'speaking' ? 'AI Response' : 'Connecting'))}
+                    </span>
+                    <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded border shadow-sm ${liveConfig.voiceEngine === 'elevenlabs' ? 'bg-pink-500/10 border-pink-500/20' : 'bg-blue-500/10 border-blue-500/20'}`}>
+                        <MusicalNoteIcon className={`w-2.5 h-2.5 ${liveConfig.voiceEngine === 'elevenlabs' ? 'text-pink-400' : 'text-blue-400'}`} />
+                        <span className={`text-[8px] font-black uppercase tracking-tighter ${liveConfig.voiceEngine === 'elevenlabs' ? 'text-pink-400' : 'text-blue-400'}`}>
+                            {liveConfig.voiceEngine === 'elevenlabs' ? '11Labs' : 'Native'}
+                        </span>
+                    </div>
                 </div>
                 <div className="flex items-center gap-1">
-                    <button onClick={() => setIsExpanded(false)} className="p-1.5 text-zinc-500 hover:text-white hover:bg-zinc-800 rounded-lg"><ChevronDownIcon className="w-4 h-4" /></button>
-                    <button onClick={onClose} className="p-1.5 text-zinc-500 hover:text-white hover:bg-zinc-800 rounded-lg"><XMarkIcon className="w-4 h-4" /></button>
+                    {status === 'speaking' && (
+                        <button 
+                            onClick={handleStopAudio} 
+                            className="flex items-center gap-1.5 px-2 py-1 bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/40 rounded-lg transition-all animate-in slide-in-from-right-2"
+                            title="Stop Audio Output"
+                        >
+                            <StopIcon className="w-3.5 h-3.5" />
+                            <span className="text-[9px] font-black uppercase">Stop</span>
+                        </button>
+                    )}
+                    <button onClick={() => setIsExpanded(false)} className="p-1.5 text-zinc-500 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"><ChevronDownIcon className="w-4 h-4" /></button>
+                    <button onClick={onClose} className="p-1.5 text-zinc-500 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"><XMarkIcon className="w-4 h-4" /></button>
                 </div>
             </div>
-            <div className="flex-1 p-4 flex flex-col justify-center">
-                {status === 'active' ? (
-                    <div className="space-y-4">
-                        <div className="flex items-center justify-center gap-1 h-8">
-                            {[...Array(20)].map((_, i) => (
-                                <div key={i} className="w-1 bg-blue-500 rounded-full transition-all duration-75" style={{ height: `${15 + (volume * 150)}%`, opacity: 0.4 + (volume * 0.6) }}></div>
-                            ))}
+
+            <div className="flex-1 p-4 flex flex-col justify-between">
+                {status !== 'error' && status !== 'connecting' ? (
+                    <>
+                        <div className="flex items-end justify-center gap-1.5 h-16 mb-4">
+                            {[...Array(24)].map((_, i) => {
+                                // Baseline movement when idle
+                                const baseJitter = 0.02;
+                                // Audio feedback
+                                const activeVol = volume;
+                                // Combined movement
+                                const displayVol = Math.max(baseJitter, activeVol);
+                                
+                                const colorClass = liveConfig.voiceEngine === 'elevenlabs' 
+                                    ? (status === 'speaking' ? 'bg-pink-500 shadow-[0_0_15px_rgba(236,72,153,0.4)]' : 'bg-emerald-500')
+                                    : (status === 'speaking' ? 'bg-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.4)]' : 'bg-emerald-500');
+
+                                return (
+                                    <div 
+                                        key={i} 
+                                        className={`w-1 rounded-full transition-all duration-75 ${colorClass}`} 
+                                        style={{ 
+                                            height: `${10 + (displayVol * 180 * (0.4 + Math.random() * 0.6))}%`, 
+                                            opacity: 0.2 + (displayVol * 0.8) 
+                                        }}
+                                    ></div>
+                                );
+                            })}
                         </div>
-                        <div className="bg-black/40 rounded-xl p-3 border border-white/5 min-h-[80px] flex flex-col justify-center shadow-inner overflow-y-auto no-scrollbar">
-                            {userText && <p className="text-[11px] text-zinc-400 font-medium italic mb-2">"{userText}"</p>}
+                        
+                        <div className="bg-black/50 rounded-xl p-4 border border-white/5 min-h-[140px] max-h-[140px] flex flex-col shadow-inner overflow-y-auto no-scrollbar relative">
+                            {userText && (
+                                <p className="text-[11px] text-zinc-500 font-semibold italic mb-3 border-l-2 border-blue-500/50 pl-2 leading-relaxed">
+                                    "{userText}"
+                                </p>
+                            )}
                             {modelText ? (
-                                <p className="text-[11px] text-blue-200 font-bold leading-relaxed">{modelText}</p>
+                                <p className={`text-xs font-bold leading-relaxed animate-in fade-in slide-in-from-bottom-2 duration-300 ${liveConfig.voiceEngine === 'elevenlabs' ? 'text-pink-100' : 'text-blue-100'}`}>
+                                    {modelText}
+                                </p>
                             ) : (
-                                !userText && <p className="text-[10px] text-zinc-600 text-center italic tracking-wide">Listening...</p>
+                                status === 'thinking' ? (
+                                    <div className="flex flex-col items-center justify-center h-full gap-2 py-4">
+                                        <div className="flex gap-1">
+                                            <div className="w-1.5 h-1.5 bg-zinc-600 rounded-full animate-bounce"></div>
+                                            <div className="w-1.5 h-1.5 bg-zinc-600 rounded-full animate-bounce delay-100"></div>
+                                            <div className="w-1.5 h-1.5 bg-zinc-600 rounded-full animate-bounce delay-200"></div>
+                                        </div>
+                                        <p className="text-[10px] text-zinc-600 font-bold uppercase tracking-widest">Processing</p>
+                                    </div>
+                                ) : (
+                                    <p className="text-[10px] text-zinc-700 text-center italic tracking-wide h-full flex items-center justify-center">Listening for commands...</p>
+                                )
                             )}
                         </div>
-                    </div>
+                    </>
                 ) : (
-                    <div className="flex flex-col items-center text-center gap-3">
-                        <div className="w-12 h-12 rounded-full bg-zinc-800 flex items-center justify-center">
-                             <ExclamationTriangleIcon className={`w-6 h-6 ${status === 'error' ? 'text-red-500' : 'text-amber-500 animate-pulse'}`} />
+                    <div className="flex flex-col items-center justify-center text-center gap-4 py-8">
+                        <div className="w-16 h-16 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center shadow-lg">
+                             <ExclamationTriangleIcon className={`w-8 h-8 ${status === 'error' ? 'text-red-500' : 'text-blue-500 animate-pulse'}`} />
                         </div>
-                        <p className="text-zinc-400 text-xs font-medium">{errorMessage || "Initializing Live Stream..."}</p>
+                        <div className="space-y-1">
+                            <p className="text-white text-sm font-bold tracking-tight">{status === 'connecting' ? 'Initializing Assistant' : 'Engine Error'}</p>
+                            <p className="text-zinc-500 text-[10px] font-medium max-w-[200px] mx-auto leading-relaxed">
+                                {errorMessage || "Synchronizing high-fidelity audio engine..."}
+                            </p>
+                        </div>
                     </div>
                 )}
             </div>
         </div>
-        <button onClick={() => setIsExpanded(true)} className={`relative flex items-center justify-center rounded-full transition-all duration-500 shadow-2xl ${isExpanded ? 'scale-0 w-0 h-0 opacity-0' : 'scale-100 w-14 h-14 opacity-100 bg-blue-600 hover:bg-blue-500'}`}><BoltIcon className="w-6 h-6 text-white" /></button>
+        
+        <button 
+            onClick={() => setIsExpanded(true)} 
+            className={`group relative flex items-center justify-center rounded-full transition-all duration-500 shadow-[0_0_30px_rgba(59,130,246,0.3)] ${isExpanded ? 'scale-0 w-0 h-0 opacity-0' : 'scale-100 w-16 h-16 opacity-100 bg-blue-600 hover:bg-blue-500 ring-4 ring-blue-600/10 hover:ring-blue-500/20'}`}
+        >
+            <BoltIcon className="w-7 h-7 text-white" />
+            <div className="absolute inset-0 rounded-full border border-white/20 animate-ping opacity-20"></div>
+        </button>
     </div>
   );
 });

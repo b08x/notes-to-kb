@@ -57,11 +57,18 @@ function resolveModelName(modelName: string, provider: 'gemini' | 'openrouter'):
     if (provider === 'openrouter') return modelName || 'google/gemini-flash-1.5';
 
     const name = modelName.toLowerCase();
+    
+    // Check if it's already a full model name (e.g., gemini-1.5-flash)
+    if (name.includes('gemini-') && name.split('-').length > 2) {
+        return modelName;
+    }
+
+    // Existing Alias Logic
     if (name.includes('gemini flash') || name.includes('flash lite')) return 'gemini-flash-lite-latest';
     if (name.includes('gemini-3-flash')) return 'gemini-3-flash-preview';
     if (name.includes('gemini-3-pro')) return 'gemini-3-pro-preview';
     
-    return 'gemini-3-flash-preview';
+    return modelName || 'gemini-3-flash-preview';
 }
 
 /**

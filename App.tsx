@@ -46,13 +46,17 @@ const App: React.FC = () => {
   const [appSettings, setAppSettings] = useState<AppSettings>({
       provider: 'gemini',
       enableLiveApi: true,
-      liveModel: 'gemini-2.5-flash-native-audio-preview-09-2025',
+      liveModel: 'gemini-3-flash-preview', 
       liveVoice: 'Fenrir',
       livePromptMode: 'witty',
       customLivePrompt: '',
       generationModel: 'gemini-3-flash-preview',
       openRouterKey: '',
-      openRouterModel: 'google/gemini-flash-1.5'
+      openRouterModel: 'google/gemini-flash-1.5',
+      // ElevenLabs
+      voiceEngine: 'gemini',
+      elevenLabsKey: '',
+      elevenLabsVoiceId: '21m00Tcm4TlvDq8ikWAM' // Rachel
   });
 
   const activeProject = projects.find(p => p.id === activeProjectId) || projects[0];
@@ -85,7 +89,7 @@ const App: React.FC = () => {
     };
     setProjects(prev => [...prev, newProject]);
     setActiveProjectId(newProject.id);
-    setIsLiveActive(false); // Reset live assistant state for new project
+    setIsLiveActive(false); 
   };
 
   const handleDeleteProject = (id: string) => {
@@ -154,8 +158,6 @@ const App: React.FC = () => {
     setIsGenerating(true);
     setGenerationStatus("Synthesizing Input Context");
     setStreamSize(0);
-    
-    // Live API activation is now moved to after successful generation
     
     const pastMessages = [...activeProject.messages];
     const newUserMsg: Message = {
@@ -258,7 +260,6 @@ const App: React.FC = () => {
           activeCreation: newArtifact
       }));
 
-      // Activate Live API only AFTER successful document generation
       if (appSettings.enableLiveApi && !isLiveActive) {
           setIsLiveActive(true);
       }
@@ -362,7 +363,14 @@ const App: React.FC = () => {
               model: appSettings.liveModel,
               voice: appSettings.liveVoice,
               promptMode: appSettings.livePromptMode,
-              customPrompt: appSettings.customLivePrompt
+              customPrompt: appSettings.customLivePrompt,
+              provider: appSettings.provider,
+              openRouterKey: appSettings.openRouterKey,
+              voiceEngine: appSettings.voiceEngine,
+              elevenLabs: {
+                  key: appSettings.elevenLabsKey,
+                  voiceId: appSettings.elevenLabsVoiceId
+              }
           }}
       />
 

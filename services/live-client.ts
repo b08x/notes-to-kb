@@ -3,26 +3,18 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  */
-import { GoogleGenAI, LiveServerMessage, Modality, FunctionDeclaration, Type } from "@google/genai";
-
-const INPUT_SAMPLE_RATE = 16000;
-const OUTPUT_SAMPLE_RATE = 24000;
-const VAD_THRESHOLD = 0.002; // Lowered threshold for better sensitivity
-
-// Local interface for Gemini media blobs to avoid conflict with browser's built-in Blob
-interface GenerativeBlob {
-  data: string;
-  mimeType: string;
-}
+import { GoogleGenAI, FunctionDeclaration, Type } from "@google/genai";
+import { ElevenLabsTTS } from "./elevenlabs";
+import { GeminiNativeTTS } from "./gemini-tts";
 
 const updateElementTool: FunctionDeclaration = {
   name: "update_element",
-  description: "Update the content of a specific element using a CSS selector. Best for surgical changes (fixing a typo, changing a paragraph, updating a style).",
+  description: "Update the content of a specific element using a CSS selector. Best for surgical changes.",
   parameters: {
     type: Type.OBJECT,
     properties: {
-      selector: { type: Type.STRING, description: "CSS selector (e.g., 'h1', 'p:nth-of-type(2)', '.warning-box')" },
-      html: { type: Type.STRING, description: "The new HTML content for that element's innerHTML." }
+      selector: { type: Type.STRING, description: "CSS selector (e.g., 'h1', 'p:nth-of-type(2)')" },
+      html: { type: Type.STRING, description: "New HTML content" }
     },
     required: ["selector", "html"]
   }
@@ -30,318 +22,376 @@ const updateElementTool: FunctionDeclaration = {
 
 const appendElementTool: FunctionDeclaration = {
   name: "append_element",
-  description: "Append new content into an existing element. Useful for adding steps to a list or adding a new section at the end of a div.",
+  description: "Append new content into an existing element.",
   parameters: {
     type: Type.OBJECT,
     properties: {
-      selector: { type: Type.STRING, description: "CSS selector of the parent (e.g., 'ul', 'body')" },
-      html: { type: Type.STRING, description: "HTML content to append." }
+      selector: { type: Type.STRING, description: "CSS selector of the parent" },
+      html: { type: Type.STRING, description: "HTML content to append" }
     },
     required: ["selector", "html"]
   }
 };
 
-// Worklet code as a string to avoid separate file requirement
-const workletCode = `
-class LiveAudioProcessor extends AudioWorkletProcessor {
-  constructor() {
-    super();
-    this.vadThreshold = ${VAD_THRESHOLD};
-  }
-  process(inputs, outputs, parameters) {
-    const input = inputs[0];
-    if (input && input.length > 0) {
-      const channelData = input[0];
-      if (channelData.length === 0) return true;
-      
-      // Calculate RMS for VAD (PERF-003)
-      let sum = 0;
-      for (let i = 0; i < channelData.length; i++) {
-        sum += channelData[i] * channelData[i];
-      }
-      const rms = Math.sqrt(sum / channelData.length);
-      
-      // Only send if energy is above threshold
-      if (rms > this.vadThreshold) {
-        this.port.postMessage({ audio: channelData, volume: rms });
-      } else {
-        this.port.postMessage({ silence: true, volume: rms });
-      }
+/**
+ * Parses complex API error responses into human-readable strings.
+ */
+function parseError(error: any): string {
+    const rawMessage = error.message || String(error);
+    
+    // Check for network errors
+    if (rawMessage.includes("Failed to fetch")) {
+        return "Network connection failed. Please check your internet.";
     }
-    return true;
-  }
+
+    try {
+        // Find the JSON part if it's wrapped in other text
+        let jsonStr = rawMessage;
+        const start = rawMessage.indexOf("{");
+        const end = rawMessage.lastIndexOf("}");
+        if (start !== -1 && end !== -1) {
+            jsonStr = rawMessage.substring(start, end + 1);
+        }
+
+        const parsed = JSON.parse(jsonStr);
+        const apiError = parsed.error || parsed;
+
+        // Handle nested error messages (common in some SDK/Proxy layers)
+        if (typeof apiError.message === 'string' && apiError.message.includes("{")) {
+            return parseError({ message: apiError.message });
+        }
+
+        if (apiError.code === 429 || apiError.status === "RESOURCE_EXHAUSTED") {
+            const retryDelay = apiError.details?.find((d: any) => d.retryDelay)?.retryDelay || "shortly";
+            return `Rate limit exceeded (429). Please wait about ${retryDelay} before trying again.`;
+        }
+
+        if (apiError.message) return apiError.message;
+    } catch (e) {
+        // Not JSON, return raw if it's not too long
+    }
+    
+    return rawMessage.length > 200 ? "An unexpected API error occurred." : rawMessage;
 }
-registerProcessor('live-audio-processor', LiveAudioProcessor);
-`;
+
+/**
+ * Helper to call a function with exponential backoff retry for transient errors.
+ */
+async function withRetry<T>(fn: () => Promise<T>, maxRetries = 2): Promise<T> {
+    let lastError: any;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+            return await fn();
+        } catch (error: any) {
+            lastError = error;
+            const message = String(error.message || "");
+            const isRetryable = message.includes("429") || 
+                                message.includes("RESOURCE_EXHAUSTED") || 
+                                message.includes("Failed to fetch") ||
+                                message.includes("503") ||
+                                message.includes("504");
+            
+            if (!isRetryable || attempt === maxRetries) break;
+            
+            // Exponential backoff: 1.5s, 3s, 4.5s...
+            const delay = Math.pow(2, attempt) * 1500;
+            await new Promise(r => setTimeout(r, delay));
+        }
+    }
+    throw lastError;
+}
+
+/**
+ * Normalizes tool parameters for non-Gemini providers (OpenRouter/Mistral/OpenAI)
+ * which expect lowercase types (e.g. 'string' instead of 'STRING').
+ */
+function normalizeSchema(schema: any): any {
+  if (!schema || typeof schema !== 'object') return schema;
+  const newSchema = { ...schema };
+  if (newSchema.type && typeof newSchema.type === 'string') {
+    newSchema.type = newSchema.type.toLowerCase();
+  }
+  if (newSchema.properties) {
+    const newProps: any = {};
+    for (const key in newSchema.properties) {
+      newProps[key] = normalizeSchema(newSchema.properties[key]);
+    }
+    newSchema.properties = newProps;
+  }
+  if (newSchema.items) {
+    newSchema.items = normalizeSchema(newSchema.items);
+  }
+  return newSchema;
+}
 
 export interface LiveConfig {
     model: string;
     voice: string;
     prompt?: string;
+    provider: 'gemini' | 'openrouter';
+    openRouterKey?: string;
+    voiceEngine: 'gemini' | 'elevenlabs';
+    elevenLabs?: {
+        key: string;
+        voiceId: string;
+    };
 }
 
 export interface LiveClientCallbacks {
     onToolCall?: (toolName: string, args: any) => void;
     onVolume?: (vol: number) => void;
     onTranscription?: (text: string, source: 'user' | 'model') => void;
+    onStatusChange?: (status: 'listening' | 'thinking' | 'speaking' | 'idle') => void;
     onError?: (error: Error) => void;
 }
 
-function encode(bytes: Uint8Array): string {
-  let binary = '';
-  const len = bytes.byteLength;
-  for (let i = 0; i < len; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary);
-}
-
-function decode(base64: string): Uint8Array {
-  const binaryString = atob(base64);
-  const len = binaryString.length;
-  const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
-  return bytes;
-}
-
-async function decodeAudioData(
-  data: Uint8Array,
-  ctx: AudioContext,
-  sampleRate: number,
-  numChannels: number,
-): Promise<AudioBuffer> {
-  const dataInt16 = new Int16Array(data.buffer);
-  const frameCount = dataInt16.length / numChannels;
-  const buffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
-
-  for (let channel = 0; channel < numChannels; channel++) {
-    const channelData = buffer.getChannelData(channel);
-    for (let i = 0; i < frameCount; i++) {
-      channelData[i] = dataInt16[i * numChannels + channel] / 32768.0;
-    }
-  }
-  return buffer;
-}
-
 export class LiveClient {
-  private client: GoogleGenAI | null = null;
-  private sessionPromise: Promise<any> | null = null;
-  private inputAudioContext: AudioContext | null = null;
-  private outputAudioContext: AudioContext | null = null;
-  private audioWorkletNode: AudioWorkletNode | null = null;
-  private inputSource: MediaStreamAudioSourceNode | null = null;
-  private outputNode: GainNode | null = null;
-  private nextStartTime = 0;
-  private sources = new Set<AudioBufferSourceNode>();
+  private ai: GoogleGenAI | null = null;
+  private recognition: any = null;
+  private ttsService: ElevenLabsTTS | GeminiNativeTTS | null = null;
+  private currentConfig: LiveConfig | null = null;
   private initialContext: string = "";
   private callbacks: LiveClientCallbacks;
+  private isConnected = false;
+  private isProcessing = false;
+  private currentAbortController: AbortController | null = null;
 
   constructor(initialContext: string = "", callbacks: LiveClientCallbacks = {}) {
     this.initialContext = initialContext;
     this.callbacks = callbacks;
   }
 
-  async connect(onClose: () => void, config?: LiveConfig) {
-    this.client = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
-    this.inputAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: INPUT_SAMPLE_RATE });
-    this.outputAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: OUTPUT_SAMPLE_RATE });
+  private sanitizeModel(modelId: string): string {
+    const defaultModel = this.currentConfig?.provider === 'gemini' ? 'gemini-3-flash-preview' : 'google/gemini-flash-1.5';
+    if (!modelId) return defaultModel;
     
-    // Resume context to ensure audio processing starts
-    if (this.inputAudioContext.state === 'suspended') {
-        await this.inputAudioContext.resume();
+    if (modelId.toLowerCase().includes('native-audio')) {
+      return 'gemini-3-flash-preview';
     }
-    if (this.outputAudioContext.state === 'suspended') {
-        await this.outputAudioContext.resume();
+    return modelId;
+  }
+
+  async connect(onClose: () => void, config: LiveConfig) {
+    this.currentConfig = { ...config, model: this.sanitizeModel(config.model) };
+    if (this.currentConfig.provider === 'gemini') {
+        this.ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    }
+    this.isConnected = true;
+
+    // Initialize TTS
+    if (config.voiceEngine === 'elevenlabs' && config.elevenLabs?.key) {
+        const el = new ElevenLabsTTS(config.elevenLabs.key, config.elevenLabs.voiceId);
+        el.setOnVolume((vol) => this.callbacks.onVolume?.(vol));
+        this.ttsService = el;
+    } else {
+        const gem = new GeminiNativeTTS(config.voice);
+        gem.setOnVolume((vol) => this.callbacks.onVolume?.(vol));
+        this.ttsService = gem;
     }
 
-    this.outputNode = this.outputAudioContext.createGain();
-    this.outputNode.connect(this.outputAudioContext.destination);
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+        throw new Error("Speech recognition not supported in this browser.");
+    }
 
-    const modelName = config?.model || 'gemini-2.5-flash-native-audio-preview-09-2025';
-    const voiceName = config?.voice || 'Fenrir';
-    const systemInstruction = config?.prompt || "You are a helpful assistant.";
+    this.recognition = new SpeechRecognition();
+    this.recognition.continuous = true;
+    this.recognition.interimResults = true;
+    this.recognition.lang = 'en-US';
+
+    this.recognition.onresult = (event: any) => {
+        let interimTranscript = '';
+        let finalTranscript = '';
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+            if (event.results[i].isFinal) finalTranscript += event.results[i][0].transcript;
+            else interimTranscript += event.results[i][0].transcript;
+        }
+        if (interimTranscript) this.callbacks.onTranscription?.(interimTranscript, 'user');
+        if (finalTranscript && !this.isProcessing) {
+            // INTERRUPT CURRENT AUDIO IF USER SPEAKS
+            if (this.ttsService) this.ttsService.stopAudio();
+            this.processUserCommand(finalTranscript);
+        }
+    };
+
+    this.recognition.onerror = (event: any) => {
+        if (event.error === 'no-speech') return;
+        console.error("STT Error:", event.error);
+        this.callbacks.onError?.(new Error(`Speech recognition error: ${event.error}`));
+    };
+
+    this.recognition.onend = () => { 
+        if (this.isConnected) {
+            try { this.recognition.start(); } catch (e) {}
+        }
+    };
+
+    this.recognition.start();
+    this.callbacks.onStatusChange?.('listening');
+    this.processUserCommand("[SYSTEM] Connection established. Greet the user briefly.");
+  }
+
+  private async processUserCommand(text: string) {
+    if (this.isProcessing) {
+        this.currentAbortController?.abort();
+    }
+    
+    this.isProcessing = true;
+    this.currentAbortController = new AbortController();
+    this.callbacks.onStatusChange?.('thinking');
+    this.callbacks.onTranscription?.(text, 'user');
 
     try {
-        this.sessionPromise = this.client.live.connect({
-          model: modelName,
-          config: {
-            responseModalities: [Modality.AUDIO],
-            tools: [{ functionDeclarations: [updateElementTool, appendElementTool] }],
-            speechConfig: {
-              voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceName } },
-            },
-            inputAudioTranscription: {}, // Enabled for UI feedback
-            outputAudioTranscription: {}, // Enabled for UI feedback
-            systemInstruction: systemInstruction,
-          },
-          callbacks: {
-            onopen: async () => {
-              console.log("Live Session Connected");
-              await this.startAudioInput();
-              
-              // Immediate Handshake to confirm readiness
-              this.sessionPromise?.then(session => {
-                  session.sendRealtimeInput({
-                      text: "Connection established. Please introduce yourself briefly and confirm you are ready to help with the KB article."
-                  });
-              });
-            },
-            onmessage: async (msg: LiveServerMessage) => {
-              this.handleMessage(msg);
-            },
-            onclose: () => {
-              console.log("Live Session Closed");
-              this.stop();
-              onClose();
-            },
-            onerror: (err: any) => {
-              console.error("Live Session Error:", err);
-              if (this.callbacks.onError) this.callbacks.onError(new Error(err.message || "Network error"));
-              this.stop();
-              onClose();
-            }
-          }
-        });
-
-        this.sessionPromise.then((session) => {
-            if (this.initialContext) {
-                const contextSafe = this.initialContext.substring(0, 15000).replace(/`/g, "'");
-                session.sendRealtimeInput({
-                    text: `[SYSTEM] CURRENT_DOCUMENT_STATE:\n\`\`\`html\n${contextSafe}\n\`\`\``
-                });
+        await withRetry(async () => {
+            if (this.currentConfig?.provider === 'gemini') {
+                await this.processWithGemini(text);
+            } else {
+                await this.processWithOpenRouter(text);
             }
         });
-
     } catch (error: any) {
-        this.stop();
-        throw error;
+        if (error.name === 'AbortError') return;
+        
+        const friendlyMsg = parseError(error);
+        console.error("Pulse Processing Error:", error);
+        this.callbacks.onError?.(new Error(friendlyMsg));
+    } finally {
+        this.isProcessing = false;
+        this.callbacks.onStatusChange?.('listening');
     }
   }
 
-  private async startAudioInput() {
-    if (!this.inputAudioContext) return;
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      this.inputSource = this.inputAudioContext.createMediaStreamSource(stream);
-
-      // Initialize AudioWorklet
-      const blob = new window.Blob([workletCode], { type: 'application/javascript' });
-      const url = URL.createObjectURL(blob);
-      await this.inputAudioContext.audioWorklet.addModule(url);
-      
-      this.audioWorkletNode = new AudioWorkletNode(this.inputAudioContext, 'live-audio-processor');
-      
-      this.audioWorkletNode.port.onmessage = (e) => {
-        const { audio, volume, silence } = e.data;
-        if (this.callbacks.onVolume) this.callbacks.onVolume(volume);
-
-        if (silence) return; 
-
-        const int16 = new Int16Array(audio.length);
-        for (let i = 0; i < audio.length; i++) {
-          int16[i] = audio[i] * 32768;
+  private async processWithGemini(text: string) {
+    if (!this.ai) return;
+    const stream = await this.ai.models.generateContentStream({
+        model: this.currentConfig?.model || 'gemini-3-flash-preview',
+        contents: [{ role: 'user', parts: [{ text: `DOCUMENT_CONTEXT:\n${this.initialContext}\n\nUSER_COMMAND: ${text}` }] }],
+        config: {
+            systemInstruction: this.currentConfig?.prompt,
+            tools: [{ functionDeclarations: [updateElementTool, appendElementTool] }],
+            temperature: 0.3
         }
+    });
 
-        const pcmBlob: GenerativeBlob = {
-          data: encode(new Uint8Array(int16.buffer)),
-          mimeType: 'audio/pcm;rate=16000',
-        };
-
-        this.sessionPromise?.then(session => {
-          session.sendRealtimeInput({ media: pcmBlob });
-        });
-      };
-
-      // Connect source to worklet
-      this.inputSource.connect(this.audioWorkletNode);
-      
-      // CRITICAL: Connect worklet to a silenced destination to ensure process() is called
-      const silence = this.inputAudioContext.createGain();
-      silence.gain.value = 0;
-      this.audioWorkletNode.connect(silence);
-      silence.connect(this.inputAudioContext.destination);
-
-    } catch (error) {
-      console.error("Error accessing microphone:", error);
+    let fullModelResponse = "";
+    this.callbacks.onStatusChange?.('speaking');
+    for await (const chunk of stream) {
+        if (this.currentAbortController?.signal.aborted) break;
+        
+        if (chunk.functionCalls) {
+            for (const call of chunk.functionCalls) this.callbacks.onToolCall?.(call.name, call.args);
+        }
+        const textPart = chunk.text;
+        if (textPart) {
+            fullModelResponse += textPart;
+            this.callbacks.onTranscription?.(fullModelResponse, 'model');
+            if (this.ttsService) this.ttsService.speak(textPart);
+        }
     }
   }
-  
+
+  private async processWithOpenRouter(text: string) {
+    const apiKey = this.currentConfig?.openRouterKey;
+    if (!apiKey) throw new Error("OpenRouter API Key is missing.");
+
+    const normalizedUpdateParams = normalizeSchema(updateElementTool.parameters);
+    const normalizedAppendParams = normalizeSchema(appendElementTool.parameters);
+
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+            "Authorization": `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+            "HTTP-Referer": window.location.origin,
+            "X-Title": "AI KB Pulse"
+        },
+        body: JSON.stringify({
+            model: this.currentConfig?.model,
+            messages: [
+                { role: 'system', content: this.currentConfig?.prompt },
+                { role: 'user', content: `DOCUMENT_CONTEXT:\n${this.initialContext}\n\nUSER_COMMAND: ${text}` }
+            ],
+            tools: [
+                { type: 'function', function: { name: "update_element", description: updateElementTool.description, parameters: normalizedUpdateParams } },
+                { type: 'function', function: { name: "append_element", description: appendElementTool.description, parameters: normalizedAppendParams } }
+            ],
+            stream: true,
+            temperature: 0.3
+        }),
+        signal: this.currentAbortController?.signal
+    });
+
+    if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(errText);
+    }
+    
+    const reader = response.body?.getReader();
+    const decoder = new TextDecoder();
+    if (!reader) return;
+
+    let fullModelResponse = "";
+    this.callbacks.onStatusChange?.('speaking');
+
+    let buffer = '';
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed || trimmed === 'data: [DONE]') continue;
+            if (trimmed.startsWith('data: ')) {
+                try {
+                    const data = JSON.parse(trimmed.slice(6));
+                    const delta = data.choices[0]?.delta;
+                    
+                    if (delta?.tool_calls) {
+                        for (const tc of delta.tool_calls) {
+                            if (tc.function?.arguments) {
+                                try {
+                                    const args = JSON.parse(tc.function.arguments);
+                                    this.callbacks.onToolCall?.(tc.function.name, args);
+                                } catch (e) {}
+                            }
+                        }
+                    }
+
+                    if (delta?.content) {
+                        fullModelResponse += delta.content;
+                        this.callbacks.onTranscription?.(fullModelResponse, 'model');
+                        if (this.ttsService) this.ttsService.speak(delta.content);
+                    }
+                } catch (e) {}
+            }
+        }
+    }
+  }
+
+  public stopAudio() {
+      if (this.ttsService) this.ttsService.stopAudio();
+      this.currentAbortController?.abort();
+      this.callbacks.onStatusChange?.('listening');
+  }
+
   public sendText(text: string) {
-      this.sessionPromise?.then(session => {
-          session.sendRealtimeInput({ text: text });
-      });
-  }
-
-  private async handleMessage(message: LiveServerMessage) {
-    if (message.serverContent?.modelTurn?.parts?.[0]?.inlineData) {
-      const base64Audio = message.serverContent.modelTurn.parts[0].inlineData.data;
-      if (base64Audio) await this.playAudio(base64Audio);
-    }
-
-    if (message.serverContent?.interrupted) this.stopAudioPlayback();
-
-    const outText = message.serverContent?.outputTranscription?.text;
-    if (outText) this.callbacks.onTranscription?.(outText, 'model');
-    
-    const inText = message.serverContent?.inputTranscription?.text;
-    if (inText) this.callbacks.onTranscription?.(inText, 'user');
-    
-    // Clear transcription state on turn complete to prevent UI ghosting
-    if (message.serverContent?.turnComplete) {
-        // We handle this via the callback specifically in the UI component
-    }
-
-    if (message.toolCall) {
-        const functionCalls = message.toolCall.functionCalls;
-        if (functionCalls && functionCalls.length > 0) {
-            const responses: any[] = [];
-            for (const call of functionCalls) {
-                if (this.callbacks.onToolCall) {
-                    this.callbacks.onToolCall(call.name, call.args);
-                }
-                responses.push({ id: call.id, name: call.name, response: { result: "ok" } });
-            }
-            if (responses.length > 0) {
-                this.sessionPromise?.then(session => {
-                    session.sendToolResponse({ functionResponses: responses });
-                });
-            }
-        }
-    }
-  }
-
-  private async playAudio(base64: string) {
-    if (!this.outputAudioContext || !this.outputNode) return;
-    const bytes = decode(base64);
-    const audioBuffer = await decodeAudioData(bytes, this.outputAudioContext, OUTPUT_SAMPLE_RATE, 1);
-    const source = this.outputAudioContext.createBufferSource();
-    source.buffer = audioBuffer;
-    source.connect(this.outputNode);
-    const currentTime = this.outputAudioContext.currentTime;
-    this.nextStartTime = Math.max(this.nextStartTime, currentTime);
-    source.start(this.nextStartTime);
-    this.nextStartTime += audioBuffer.duration;
-    this.sources.add(source);
-    source.onended = () => this.sources.delete(source);
-  }
-
-  private stopAudioPlayback() {
-    this.sources.forEach(source => { try { source.stop(); } catch (e) {} });
-    this.sources.clear();
-    this.nextStartTime = 0;
+      this.processUserCommand(text);
   }
 
   public stop() {
-    this.stopAudioPlayback();
-    this.audioWorkletNode?.disconnect();
-    this.inputSource?.disconnect();
-    if (this.inputAudioContext && this.inputAudioContext.state !== 'closed') this.inputAudioContext.close().catch(() => {});
-    if (this.outputAudioContext && this.outputAudioContext.state !== 'closed') this.outputAudioContext.close().catch(() => {});
-    this.sessionPromise = null;
-    this.client = null;
+    this.isConnected = false;
+    this.currentAbortController?.abort();
+    if (this.recognition) { 
+        try { this.recognition.stop(); } catch(e) {}
+        this.recognition = null; 
+    }
+    if (this.ttsService) { 
+        this.ttsService.stop(); 
+        this.ttsService = null; 
+    }
+    this.ai = null;
   }
 }
