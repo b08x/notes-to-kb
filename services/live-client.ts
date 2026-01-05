@@ -9,12 +9,12 @@ import { GeminiNativeTTS } from "./gemini-tts";
 
 const updateElementTool: FunctionDeclaration = {
   name: "update_element",
-  description: "Update the content of a specific element using a CSS selector. Best for surgical changes.",
+  description: "Surgically update an existing element's inner HTML. Use specific CSS selectors like 'h1', 'p', or 'div.note'.",
   parameters: {
     type: Type.OBJECT,
     properties: {
       selector: { type: Type.STRING, description: "CSS selector (e.g., 'h1', 'p:nth-of-type(2)')" },
-      html: { type: Type.STRING, description: "New HTML content" }
+      html: { type: Type.STRING, description: "New HTML content for inside the element." }
     },
     required: ["selector", "html"]
   }
@@ -22,12 +22,12 @@ const updateElementTool: FunctionDeclaration = {
 
 const appendElementTool: FunctionDeclaration = {
   name: "append_element",
-  description: "Append new content into an existing element.",
+  description: "Add new content into an existing element (e.g., adding a new list item to a 'ul' or a paragraph to a 'div').",
   parameters: {
     type: Type.OBJECT,
     properties: {
-      selector: { type: Type.STRING, description: "CSS selector of the parent" },
-      html: { type: Type.STRING, description: "HTML content to append" }
+      selector: { type: Type.STRING, description: "CSS selector of the parent container." },
+      html: { type: Type.STRING, description: "HTML content to append." }
     },
     required: ["selector", "html"]
   }
@@ -51,9 +51,10 @@ function parseError(error: any): string {
     return rawMessage.length > 200 ? "An unexpected API error occurred." : rawMessage;
 }
 
-async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
+async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3, signal?: AbortSignal): Promise<T> {
     let lastError: any;
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        if (signal?.aborted) throw new Error("AbortError");
         try {
             return await fn();
         } catch (error: any) {
@@ -64,8 +65,10 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
                                 message.includes("Failed to fetch") ||
                                 message.includes("503") ||
                                 message.includes("504");
+            
             if (!isRetryable || attempt === maxRetries) break;
-            const delay = Math.pow(2, attempt) * 2000;
+            
+            const delay = (Math.pow(2, attempt) * 1000) + (Math.random() * 500);
             await new Promise(r => setTimeout(r, delay));
         }
     }
@@ -99,10 +102,10 @@ export interface LiveConfig {
 }
 
 export interface LiveClientCallbacks {
-    onToolCall?: (toolName: string, args: any) => void;
+    onToolCall?: (toolName: string, args: any) => { success: boolean; error?: string };
     onVolume?: (vol: number) => void;
     onTranscription?: (text: string, source: 'user' | 'model') => void;
-    onStatusChange?: (status: 'listening' | 'thinking' | 'speaking' | 'idle') => void;
+    onStatusChange?: (status: 'listening' | 'thinking' | 'speaking' | 'idle' | 'transcoding') => void;
     onError?: (error: Error) => void;
     onLatency?: (ms: number) => void;
 }
@@ -112,6 +115,7 @@ export class LiveClient {
   private chat: Chat | null = null;
   private orHistory: any[] = [];
   private recognition: any = null;
+  private isRecognitionActive = false;
   private ttsService: ElevenLabsTTS | GeminiNativeTTS | null = null;
   private currentConfig: LiveConfig | null = null;
   private initialContext: string = "";
@@ -125,6 +129,13 @@ export class LiveClient {
   constructor(initialContext: string = "", callbacks: LiveClientCallbacks = {}) {
     this.initialContext = initialContext;
     this.callbacks = callbacks;
+  }
+
+  public updateContext(html: string) {
+      if (!this.isConnected || !html) return;
+      this.initialContext = html;
+      // We push a "hidden" update turn to the model so it sees the new document structure
+      this.sendText(`[SYSTEM] The document has been updated. Use this new structure for all subsequent edits:\n\`\`\`html\n${html.substring(0, 15000)}\n\`\`\``);
   }
 
   private sanitizeModel(modelId: string): string {
@@ -142,7 +153,7 @@ export class LiveClient {
         this.chat = this.ai.chats.create({
             model: this.currentConfig.model,
             config: {
-                systemInstruction: `${config.prompt}\n\nDOCUMENT_CONTEXT:\n${this.initialContext}`,
+                systemInstruction: `${config.prompt}\n\nCRITICAL: You are editing an HTML document live. Use CSS selectors precisely.\nDOCUMENT_CONTEXT:\n${this.initialContext}`,
                 tools: [{ functionDeclarations: [updateElementTool, appendElementTool] }],
                 temperature: 0.3
             }
@@ -150,7 +161,7 @@ export class LiveClient {
     } else {
         this.orHistory = [{ 
             role: 'system', 
-            content: `${config.prompt}\n\nDOCUMENT_CONTEXT:\n${this.initialContext}` 
+            content: `${config.prompt}\n\nCRITICAL: You are editing an HTML document live. Use CSS selectors precisely.\nDOCUMENT_CONTEXT:\n${this.initialContext}` 
         }];
     }
 
@@ -159,6 +170,10 @@ export class LiveClient {
     if (config.voiceEngine === 'elevenlabs' && config.elevenLabs?.key) {
         const el = new ElevenLabsTTS(config.elevenLabs.key, config.elevenLabs.voiceId);
         el.setOnVolume((vol) => this.callbacks.onVolume?.(vol));
+        el.setOnStatusChange((isTranscoding) => {
+            if (isTranscoding && !this.isProcessing) this.callbacks.onStatusChange?.('transcoding');
+            else if (!isTranscoding && !this.isProcessing) this.callbacks.onStatusChange?.('speaking');
+        });
         this.ttsService = el;
     } else {
         const gem = new GeminiNativeTTS(config.voice);
@@ -167,16 +182,14 @@ export class LiveClient {
     }
 
     this.initSTT();
-    this.processUserCommand("[SYSTEM] Connection established. Greet the user briefly.");
+    this.processUserCommand("[SYSTEM] Protocol connection stabilized. Awaiting user input.");
   }
 
   private initSTT() {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) throw new Error("Speech recognition not supported.");
 
-    if (this.recognition) {
-        try { this.recognition.stop(); } catch(e) {}
-    }
+    if (this.recognition && this.isRecognitionActive) return;
 
     this.recognition = new SpeechRecognition();
     this.recognition.continuous = true;
@@ -191,7 +204,6 @@ export class LiveClient {
             else interimTranscript += event.results[i][0].transcript;
         }
         
-        // UX: Pre-warm TTS as soon as user finishes speaking, anticipating the turn.
         if (finalTranscript && this.ttsService) {
             this.ttsService.prewarm();
         }
@@ -204,24 +216,37 @@ export class LiveClient {
     };
 
     this.recognition.onerror = (event: any) => {
-        if (event.error === 'no-speech') return;
-        console.warn("STT Error:", event.error);
+        if (event.error === 'no-speech' || event.error === 'aborted') {
+            this.isRecognitionActive = false;
+            return;
+        }
+        console.warn("STT Engine Warning:", event.error);
+        this.isRecognitionActive = false;
         this.scheduleReconnect();
     };
 
+    this.recognition.onstart = () => {
+        this.isRecognitionActive = true;
+        this.callbacks.onStatusChange?.('listening');
+    };
+
     this.recognition.onend = () => { 
+        this.isRecognitionActive = false;
         if (this.isConnected) this.scheduleReconnect();
     };
 
-    try { this.recognition.start(); } catch(e) {}
-    this.callbacks.onStatusChange?.('listening');
+    try { 
+        this.recognition.start(); 
+    } catch(e) {
+        this.isRecognitionActive = false;
+    }
   }
 
   private scheduleReconnect() {
       if (this.reconnectTimeout) clearTimeout(this.reconnectTimeout);
       this.reconnectTimeout = setTimeout(() => {
-          if (this.isConnected) this.initSTT();
-      }, 1000);
+          if (this.isConnected && !this.isRecognitionActive) this.initSTT();
+      }, 2000);
   }
 
   private async processUserCommand(text: string) {
@@ -240,9 +265,9 @@ export class LiveClient {
             } else {
                 await this.processWithOpenRouter(text);
             }
-        });
+        }, 3, this.currentAbortController.signal);
     } catch (error: any) {
-        if (error.name === 'AbortError') return;
+        if (error.name === 'AbortError' || error.message === 'AbortError') return;
         const friendlyMsg = parseError(error);
         this.callbacks.onError?.(new Error(friendlyMsg));
     } finally {
@@ -257,17 +282,22 @@ export class LiveClient {
 
     let fullModelResponse = "";
     let firstChunkReceived = false;
-    this.callbacks.onStatusChange?.('speaking');
 
     for await (const chunk of stream) {
         if (this.currentAbortController?.signal.aborted) break;
         if (!firstChunkReceived) {
+            this.callbacks.onStatusChange?.('speaking');
             this.callbacks.onLatency?.(Math.round(performance.now() - this.startTime));
             firstChunkReceived = true;
         }
         
         if (chunk.functionCalls) {
-            for (const call of chunk.functionCalls) this.callbacks.onToolCall?.(call.name, call.args);
+            for (const call of chunk.functionCalls) {
+                const res = this.callbacks.onToolCall?.(call.name, call.args);
+                if (res && !res.success) {
+                    console.warn(`Assistant Tool Failure: ${res.error}`);
+                }
+            }
         }
         const textPart = chunk.text;
         if (textPart) {
@@ -314,13 +344,14 @@ export class LiveClient {
 
     let fullModelResponse = "";
     let firstChunkReceived = false;
-    this.callbacks.onStatusChange?.('speaking');
+    let pendingToolCalls: Record<number, { name: string; args: string }> = {};
 
     let buffer = '';
     while (true) {
         const { done, value } = await reader.read();
         if (done) break;
         if (!firstChunkReceived) {
+            this.callbacks.onStatusChange?.('speaking');
             this.callbacks.onLatency?.(Math.round(performance.now() - this.startTime));
             firstChunkReceived = true;
         }
@@ -335,16 +366,16 @@ export class LiveClient {
                 try {
                     const data = JSON.parse(trimmed.slice(6));
                     const delta = data.choices[0]?.delta;
+                    
                     if (delta?.tool_calls) {
                         for (const tc of delta.tool_calls) {
-                            if (tc.function?.arguments) {
-                                try {
-                                    const args = JSON.parse(tc.function.arguments);
-                                    this.callbacks.onToolCall?.(tc.function.name, args);
-                                } catch (e) {}
-                            }
+                            const index = tc.index ?? 0;
+                            if (!pendingToolCalls[index]) pendingToolCalls[index] = { name: '', args: '' };
+                            if (tc.function?.name) pendingToolCalls[index].name = tc.function.name;
+                            if (tc.function?.arguments) pendingToolCalls[index].args += tc.function.arguments;
                         }
                     }
+
                     if (delta?.content) {
                         fullModelResponse += delta.content;
                         this.callbacks.onTranscription?.(fullModelResponse, 'model');
@@ -354,6 +385,18 @@ export class LiveClient {
             }
         }
     }
+
+    // Process all aggregated tool calls at the end of the stream
+    for (const tc of Object.values(pendingToolCalls)) {
+        try {
+            const parsedArgs = JSON.parse(tc.args);
+            const res = this.callbacks.onToolCall?.(tc.name, parsedArgs);
+            if (res && !res.success) console.warn(`Tool failure: ${res.error}`);
+        } catch (e) {
+            console.error("Failed to parse tool arguments from OpenRouter stream:", tc.args);
+        }
+    }
+
     this.orHistory.push({ role: 'assistant', content: fullModelResponse });
     if (this.ttsService && 'flush' in this.ttsService) this.ttsService.flush();
   }
@@ -372,9 +415,14 @@ export class LiveClient {
     this.isConnected = false;
     if (this.reconnectTimeout) clearTimeout(this.reconnectTimeout);
     this.currentAbortController?.abort();
-    if (this.recognition) { try { this.recognition.stop(); } catch(e) {} }
+    if (this.recognition) { 
+        try { 
+            this.recognition.onend = null;
+            this.recognition.onerror = null;
+            this.recognition.onresult = null;
+            this.recognition.stop(); 
+        } catch(e) {} 
+    }
     if (this.ttsService) this.ttsService.stop();
-    this.ai = null;
-    this.chat = null;
   }
 }

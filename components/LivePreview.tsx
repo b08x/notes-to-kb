@@ -14,7 +14,8 @@ import {
     CheckCircleIcon,
     DocumentArrowDownIcon,
     DocumentIcon,
-    ShieldCheckIcon
+    ShieldCheckIcon,
+    ArrowPathIcon
 } from '@heroicons/react/24/outline';
 import { Creation } from './CreationHistory';
 import { DocxGenerator } from '../lib/services/DocxGenerator';
@@ -28,7 +29,7 @@ interface LivePreviewProps {
   className?: string;
   imageMap?: Record<string, string>;
   onUpdateArtifact?: (id: string, html: string, isManualEdit: boolean) => void;
-  onStandardize?: () => void; // New: Trigger for ServiceNow compliance
+  onStandardize?: () => void;
   isLive?: boolean;
 }
 
@@ -137,11 +138,14 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
 }) => {
     const [isExporting, setIsExporting] = useState<'docx' | 'pdf' | null>(null);
     const [isEditing, setIsEditing] = useState(false);
-    const [showStyleEditor, setShowStyleEditor] = useState(false);
+    const [isSyncing, setIsSyncing] = useState(false);
     const [isFullScreen, setIsFullScreen] = useState(false);
+    const [internalSrcDoc, setInternalSrcDoc] = useState("");
+    
     const stopGenerationSoundRef = useRef<(() => void) | null>(null);
     const prevIsLoadingRef = useRef(isLoading);
     const iframeRef = useRef<HTMLIFrameElement>(null);
+    const lastRenderedId = useRef<string | null>(null);
 
     useEffect(() => {
         if (isLoading && !prevIsLoadingRef.current) stopGenerationSoundRef.current = playGeneratingSound();
@@ -166,20 +170,31 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
             <script>
                 window.addEventListener('message', (event) => {
                     const { type, selector, html } = event.data;
-                    if (type === 'UPDATE_ELEMENT') {
+                    if (type === 'UPDATE_ELEMENT' || type === 'APPEND_ELEMENT') {
                         const target = document.querySelector(selector);
                         if (target) {
-                            target.innerHTML = html;
-                            target.classList.add('kb-updated-node');
-                            setTimeout(() => target.classList.remove('kb-updated-node'), 3000);
-                        }
-                    } else if (type === 'APPEND_ELEMENT') {
-                        const parent = document.querySelector(selector) || document.body;
-                        parent.insertAdjacentHTML('beforeend', html);
-                        const newNode = parent.lastElementChild;
-                        if (newNode) {
-                            newNode.classList.add('kb-updated-node');
-                            setTimeout(() => newNode.classList.remove('kb-updated-node'), 3000);
+                            // Phase 1: Pre-update highlight
+                            target.style.transition = 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)';
+                            target.style.outline = '3px solid rgba(59, 130, 246, 0.5)';
+                            target.style.outlineOffset = '4px';
+                            target.style.backgroundColor = 'rgba(59, 130, 246, 0.05)';
+                            
+                            setTimeout(() => {
+                                // Phase 2: Apply Content
+                                if (type === 'UPDATE_ELEMENT') {
+                                    target.innerHTML = html;
+                                } else {
+                                    target.insertAdjacentHTML('beforeend', html);
+                                }
+                                
+                                // Phase 3: Post-update glow
+                                target.style.outline = 'none';
+                                target.classList.add('kb-updated-node');
+                                setTimeout(() => {
+                                    target.classList.remove('kb-updated-node');
+                                    target.style.backgroundColor = 'transparent';
+                                }, 3000);
+                            }, 400);
                         }
                     }
                 });
@@ -202,64 +217,30 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
             }
             
             h1 { font-size: 3.5rem; font-weight: 800; color: #111827; letter-spacing: -0.04em; margin-bottom: 1rem; line-height: 1.1; }
-            
-            .metadata { 
-                font-family: 'JetBrains Mono', monospace; 
-                font-size: 11px; 
-                color: #9ca3af; 
-                text-transform: uppercase; 
-                letter-spacing: 0.15em; 
-                margin-bottom: 4rem; 
-                border-bottom: 1px solid #f3f4f6; 
-                padding-bottom: 1.5rem; 
-                display: flex;
-                gap: 1.5rem;
-            }
-            
+            .metadata { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.15em; margin-bottom: 4rem; border-bottom: 1px solid #f3f4f6; padding-bottom: 1.5rem; display: flex; gap: 1.5rem; }
             h2 { font-size: 2rem; font-weight: 700; color: #111827; margin-top: 4.5rem; margin-bottom: 1.75rem; letter-spacing: -0.02em; border-left: 5px solid #3b82f6; padding-left: 1.5rem; margin-left: -1.5rem; }
             h3 { font-size: 1.5rem; font-weight: 600; color: #1f2937; margin-top: 3.5rem; margin-bottom: 1.25rem; }
-            
             p { margin-bottom: 1.75rem; font-size: 1.125rem; }
-            
             ul, ol { margin-bottom: 3rem; padding-left: 2rem; }
             li { margin-bottom: 1.25rem; }
-            li strong { color: #111827; font-weight: 700; }
-            
             img { max-width: 100%; height: auto; display: block; margin: 4rem auto; border-radius: 20px; border: 1px solid #e5e7eb; box-shadow: 0 30px 60px -15px rgba(0,0,0,0.12); transition: transform 0.3s ease; }
-            img:hover { transform: scale(1.01); }
-            
             .ai-diagram { margin: 4.5rem 0; background: #f8fafc; border-radius: 24px; border: 1px solid #e2e8f0; padding: 3rem; }
-            
             .note, .warning { padding: 2rem; border-radius: 18px; margin: 3rem 0; font-size: 1.05rem; position: relative; overflow: hidden; }
             .note { background: #f0f7ff; border-left: 6px solid #3b82f6; color: #1e40af; }
             .warning { background: #fffaf5; border-left: 6px solid #f97316; color: #9a3412; }
-            
             table { width: 100%; border-collapse: separate; border-spacing: 0; margin: 3.5rem 0; font-size: 1rem; border-radius: 16px; overflow: hidden; border: 1px solid #e5e7eb; }
             th { text-align: left; background: #f9fafb; padding: 18px 24px; border-bottom: 2px solid #f1f5f9; color: #111827; font-weight: 700; }
             td { padding: 18px 24px; border-bottom: 1px solid #f1f5f9; }
-            tr:last-child td { border-bottom: none; }
             
-            [contenteditable="true"] {
-                cursor: text;
-            }
-
-            [contenteditable="true"]:focus { 
-                outline: none; 
-                box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.15); 
-                border-radius: 4px; 
-            }
+            [contenteditable="true"]:focus { outline: none; box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.15); border-radius: 4px; }
             
             @keyframes glowPulse {
-                0% { background-color: rgba(52, 211, 153, 0.0); }
-                15% { background-color: rgba(52, 211, 153, 0.15); box-shadow: 0 0 20px rgba(52, 211, 153, 0.1); }
-                100% { background-color: rgba(52, 211, 153, 0.0); }
+                0% { background-color: rgba(59, 130, 246, 0.0); }
+                15% { background-color: rgba(59, 130, 246, 0.15); box-shadow: 0 0 30px rgba(59, 130, 246, 0.2); }
+                100% { background-color: rgba(59, 130, 246, 0.0); }
             }
-            .kb-updated-node { animation: glowPulse 3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
-            
-            @keyframes reveal { 
-                from { opacity: 0; transform: translateY(15px); } 
-                to { opacity: 1; transform: translateY(0); } 
-            }
+            .kb-updated-node { animation: glowPulse 3.5s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+            @keyframes reveal { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
             body > * { animation: reveal 0.8s cubic-bezier(0.16, 1, 0.3, 1) both; }
         </style>`;
 
@@ -272,6 +253,28 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
         return final;
     }, [creation?.html, imageMap]);
 
+    // INCREMENTAL UPDATE LOGIC: 
+    // Only update srcDoc if the ID has changed (switching documents).
+    // This prevents the iframe from flickering when model makes atomic updates.
+    useEffect(() => {
+        if (!creation) return;
+        if (creation.id !== lastRenderedId.current) {
+            setInternalSrcDoc(processedHtml);
+            lastRenderedId.current = creation.id;
+        }
+    }, [creation?.id, processedHtml]);
+
+    useEffect(() => {
+        const handleMessage = (event: MessageEvent) => {
+            if (event.data?.type === 'UPDATE_ELEMENT' || event.data?.type === 'APPEND_ELEMENT') {
+                setIsSyncing(true);
+                setTimeout(() => setIsSyncing(false), 2500);
+            }
+        };
+        window.addEventListener('message', handleMessage);
+        return () => window.removeEventListener('message', handleMessage);
+    }, []);
+
     useEffect(() => {
         const iframe = iframeRef.current;
         if (!iframe) return;
@@ -279,25 +282,24 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
              try {
                  const doc = iframe.contentDocument;
                  if (!doc) return;
-                 const isActuallyEditable = (isEditing && !showStyleEditor && !isLive);
+                 const isActuallyEditable = (isEditing && !isLive);
                  doc.body.contentEditable = isActuallyEditable ? "true" : "false";
-                 if (isActuallyEditable) {
-                    doc.body.classList.add('kb-edit-active');
-                 } else {
-                    doc.body.classList.remove('kb-edit-active');
-                 }
              } catch (e) {}
         };
         toggleEdit(); iframe.onload = toggleEdit;
-    }, [isEditing, processedHtml, showStyleEditor, isLive]);
+    }, [isEditing, isLive]);
 
     const handleSaveEdit = () => {
         if (!iframeRef.current?.contentDocument) return;
         const doc = iframeRef.current.contentDocument;
         doc.querySelectorAll('[contenteditable]').forEach(el => el.removeAttribute('contenteditable'));
         let newHtml = doc.documentElement.outerHTML;
-        if (creation && onUpdateArtifact) onUpdateArtifact(creation.id, newHtml, true);
-        setIsEditing(false); setShowStyleEditor(false);
+        if (creation && onUpdateArtifact) {
+            onUpdateArtifact(creation.id, newHtml, true);
+            // Since this was a manual edit, we DO want to force a refresh to ensure state is clean
+            setInternalSrcDoc(processedHtml);
+        }
+        setIsEditing(false);
     };
 
     const handleExportDocx = async () => {
@@ -356,19 +358,20 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
         
         {creation && (
             <div className="flex items-center gap-2">
-                {!isEditing && !showStyleEditor ? (
+                {isSyncing && (
+                    <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-500/10 border border-blue-500/20 rounded-lg animate-in fade-in zoom-in-95 mr-2">
+                        <ArrowPathIcon className="w-3.5 h-3.5 text-blue-400 animate-spin" />
+                        <span className="text-[10px] font-black text-blue-400 uppercase tracking-tighter">Live Modifying</span>
+                    </div>
+                )}
+
+                {!isEditing ? (
                     <div className="flex items-center p-1 bg-zinc-900/80 rounded-xl border border-zinc-800 shadow-sm mr-2">
                         <button 
                             onClick={() => setIsEditing(true)} 
                             className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-black uppercase text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-all"
                         >
                             <PencilIcon className="w-3.5 h-3.5" /> Edit
-                        </button>
-                        <button 
-                            onClick={() => setShowStyleEditor(true)} 
-                            className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-black uppercase text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-all"
-                        >
-                            <PaintBrushIcon className="w-3.5 h-3.5" /> Style
                         </button>
                         <button 
                             onClick={onStandardize} 
@@ -381,7 +384,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
                 ) : (
                     <div className="flex items-center gap-2 mr-2">
                         <button onClick={handleSaveEdit} className="flex items-center gap-1.5 px-4 py-1.5 text-[10px] font-black uppercase text-emerald-950 bg-emerald-400 hover:bg-emerald-300 rounded-lg transition-all shadow-[0_0_20px_rgba(52,211,153,0.3)]"><CheckIcon className="w-3.5 h-3.5" /> Save Changes</button>
-                        <button onClick={() => { setIsEditing(false); setShowStyleEditor(false); }} className="px-3 py-1.5 text-[10px] font-bold text-zinc-500 hover:text-zinc-300 transition-colors">Discard</button>
+                        <button onClick={() => setIsEditing(false)} className="px-3 py-1.5 text-[10px] font-bold text-zinc-500 hover:text-zinc-300 transition-colors">Discard</button>
                     </div>
                 )}
                 
@@ -391,32 +394,20 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
                     <button 
                         onClick={handleExportPdf} 
                         disabled={!!isExporting} 
-                        className={`
-                            group relative p-2 text-zinc-400 hover:text-orange-400 bg-zinc-900/50 hover:bg-orange-500/10 border border-zinc-800 hover:border-orange-500/30 rounded-xl transition-all shadow-sm
-                            ${isExporting === 'pdf' ? 'cursor-not-allowed opacity-50' : ''}
-                        `}
+                        className={`group relative p-2 text-zinc-400 hover:text-orange-400 bg-zinc-900/50 hover:bg-orange-500/10 border border-zinc-800 hover:border-orange-500/30 rounded-xl transition-all shadow-sm ${isExporting === 'pdf' ? 'cursor-not-allowed opacity-50' : ''}`}
                         title="Export as PDF"
                     >
                         <DocumentIcon className={`w-4.5 h-4.5 ${isExporting === 'pdf' ? 'animate-pulse' : ''}`} />
                     </button>
-
                     <button 
                         onClick={handleExportDocx} 
                         disabled={!!isExporting} 
-                        className={`
-                            group relative p-2 text-zinc-400 hover:text-blue-400 bg-zinc-900/50 hover:bg-blue-500/10 border border-zinc-800 hover:border-blue-500/30 rounded-xl transition-all shadow-sm
-                            ${isExporting === 'docx' ? 'cursor-not-allowed opacity-50' : ''}
-                        `}
+                        className={`group relative p-2 text-zinc-400 hover:text-blue-400 bg-zinc-900/50 hover:bg-blue-500/10 border border-zinc-800 hover:border-blue-500/30 rounded-xl transition-all shadow-sm ${isExporting === 'docx' ? 'cursor-not-allowed opacity-50' : ''}`}
                         title="Export as Word"
                     >
                         <DocumentArrowDownIcon className={`w-4.5 h-4.5 ${isExporting === 'docx' ? 'animate-pulse' : ''}`} />
                     </button>
-                    
-                    <button 
-                        onClick={() => setIsFullScreen(!isFullScreen)} 
-                        className="p-2 text-zinc-500 hover:text-white bg-zinc-900/50 border border-zinc-800 rounded-xl hover:bg-zinc-800 transition-all shadow-sm"
-                        title="Toggle Focus Mode"
-                    >
+                    <button onClick={() => setIsFullScreen(!isFullScreen)} className="p-2 text-zinc-500 hover:text-white bg-zinc-900/50 border border-zinc-800 rounded-xl hover:bg-zinc-800 transition-all shadow-sm">
                         {isFullScreen ? <ArrowsPointingInIcon className="w-4.5 h-4.5" /> : <ArrowsPointingOutIcon className="w-4.5 h-4.5" />}
                     </button>
                 </div>
@@ -429,22 +420,16 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
             <div className="absolute inset-0 z-[102] bg-[#050507]/90 backdrop-blur-3xl flex items-center justify-center animate-in fade-in duration-500">
                 <div className="max-w-md w-full p-1 border border-zinc-800/50 rounded-[3rem] bg-zinc-900/20 shadow-2xl">
                     <div className="px-10 py-12 rounded-[2.8rem] bg-black/60 border border-zinc-800 flex flex-col items-center text-center shadow-inner">
-                        
                         <div className="relative mb-14">
                             <div className="w-28 h-28 rounded-full bg-blue-500/10 flex items-center justify-center border border-blue-500/20 shadow-[0_0_80px_rgba(59,130,246,0.2)]">
                                 <SparklesIcon className="w-12 h-12 text-blue-400 animate-pulse" />
                             </div>
-                            <div className="absolute -inset-8 animate-[spin_12s_linear_infinite] opacity-60">
-                                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-3 h-3 bg-blue-500 rounded-full shadow-[0_0_20px_rgba(59,130,246,1)]"></div>
-                            </div>
                         </div>
-
                         <div className="w-full space-y-10">
                             <div className="space-y-3">
                                 <h3 className="text-2xl font-black text-white tracking-tighter">Manifesting Article</h3>
                                 <p className="text-blue-500/80 text-[10px] font-black uppercase tracking-[0.4em]">{loadingMessage || 'Interpreting Signal...'}</p>
                             </div>
-
                             <div className="space-y-4 text-left max-w-[260px] mx-auto">
                                 {phases.map((phase, idx) => {
                                     const isComplete = idx < currentPhaseIndex;
@@ -452,36 +437,12 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
                                     return (
                                         <div key={phase.id} className={`flex items-center gap-4 transition-all duration-700 ${isComplete ? 'opacity-100 translate-x-0' : (isActive ? 'opacity-100 translate-x-1' : 'opacity-10')}`}>
                                             <div className="flex items-center justify-center w-6 h-6 shrink-0">
-                                                {isComplete ? (
-                                                    <CheckCircleIcon className="w-6 h-6 text-emerald-500" />
-                                                ) : isActive ? (
-                                                    <div className="relative flex items-center justify-center">
-                                                      <div className="absolute inset-0 bg-blue-500/30 rounded-full animate-ping"></div>
-                                                      <div className="w-2.5 h-2.5 bg-blue-500 rounded-full"></div>
-                                                    </div>
-                                                ) : (
-                                                    <div className="w-2 h-2 bg-zinc-800 rounded-full"></div>
-                                                )}
+                                                {isComplete ? <CheckCircleIcon className="w-6 h-6 text-emerald-500" /> : (isActive ? <div className="w-2.5 h-2.5 bg-blue-500 rounded-full animate-ping"></div> : <div className="w-2 h-2 bg-zinc-800 rounded-full"></div>)}
                                             </div>
-                                            <span className={`text-[12px] font-bold tracking-tight ${isComplete ? 'text-zinc-600 line-through' : (isActive ? 'text-zinc-100' : 'text-zinc-800')}`}>
-                                                {phase.label}
-                                            </span>
+                                            <span className={`text-[12px] font-bold tracking-tight ${isComplete ? 'text-zinc-600 line-through' : (isActive ? 'text-zinc-100' : 'text-zinc-800')}`}>{phase.label}</span>
                                         </div>
                                     );
                                 })}
-                            </div>
-
-                            <div className="pt-4 px-4">
-                                <div className="flex items-center justify-between mb-3 px-1">
-                                    <span className="text-[9px] font-black text-zinc-600 uppercase tracking-widest">Entropy Compression</span>
-                                    <span className="text-[10px] text-zinc-400 font-mono tracking-tighter">{(streamSize/1024).toFixed(1)}KB</span>
-                                </div>
-                                <div className="w-full h-1.5 bg-zinc-950 rounded-full overflow-hidden border border-zinc-800/50">
-                                    <div 
-                                        className="h-full bg-gradient-to-r from-blue-600 via-indigo-500 to-blue-400 transition-all duration-700 ease-out shadow-[0_0_15px_rgba(37,99,235,0.5)]" 
-                                        style={{ width: `${Math.min(100, (streamSize / 8192) * 100)}%` }}
-                                    ></div>
-                                </div>
                             </div>
                         </div>
                     </div>
@@ -498,12 +459,12 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
         
         <div className={`flex-1 w-full overflow-y-auto overflow-x-hidden p-6 md:p-12 transition-all duration-700 ${processedHtml ? 'bg-[#121214]' : 'bg-[#050507]'}`}>
           <div className={`mx-auto max-w-[900px] w-full min-h-full transition-all duration-1000 ${processedHtml ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
-            {processedHtml ? (
+            {internalSrcDoc ? (
                 <div className={`relative bg-white shadow-[0_40px_120px_rgba(0,0,0,0.6)] rounded-sm overflow-hidden min-h-[1200px] animate-in fade-in slide-in-from-bottom-4 duration-1000 ${isEditing ? 'ring-4 ring-blue-500/30' : ''}`}>
                     <iframe 
                       ref={iframeRef} 
                       title="Preview" 
-                      srcDoc={processedHtml} 
+                      srcDoc={internalSrcDoc} 
                       className={`w-full h-full border-none transition-opacity duration-1000 min-h-[1200px] ${isLoading ? 'opacity-20 pointer-events-none' : 'opacity-100'}`} 
                       sandbox="allow-scripts allow-forms allow-popups allow-modals allow-same-origin" 
                     />
@@ -515,25 +476,13 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
                     </div>
                 ) : (
                     <div className="w-full h-full flex items-center justify-center p-8 bg-zinc-900/30 rounded-2xl border border-zinc-800/50">
-                        <div className="relative group max-w-2xl animate-in zoom-in-95 duration-700">
-                            <img src={creation.originalImage} alt="Reference Context" className="max-w-full max-h-[75vh] object-contain rounded-xl shadow-[0_20px_60px_rgba(0,0,0,0.6)] border border-white/5 opacity-50 group-hover:opacity-80 transition-opacity" />
-                        </div>
+                        <img src={creation.originalImage} alt="Reference Context" className="max-w-full max-h-[75vh] object-contain rounded-xl shadow-[0_20px_60px_rgba(0,0,0,0.6)] border border-white/5 opacity-80" />
                     </div>
                 )
             ) : (
                 <div className="flex flex-col items-center justify-center min-h-[60vh] text-zinc-700 space-y-8 animate-in fade-in duration-1000">
-                    <div className="relative">
-                        <div className="p-8 bg-zinc-900/40 rounded-[2.5rem] border border-zinc-800/50 shadow-inner">
-                            <SparklesIcon className="w-20 h-20 opacity-10 animate-pulse text-blue-500" />
-                        </div>
-                        <div className="absolute -inset-10 bg-blue-500/5 blur-3xl rounded-full"></div>
-                    </div>
-                    <div className="text-center space-y-2">
-                        <p className="text-[11px] font-black tracking-[0.5em] uppercase opacity-40">Awaiting Signal</p>
-                        <p className="text-[13px] font-medium text-zinc-600 max-w-[280px] leading-relaxed">
-                            Upload high-fidelity technical specs or captured UI to manifest professional documentation
-                        </p>
-                    </div>
+                    <SparklesIcon className="w-20 h-20 opacity-10 animate-pulse text-blue-500" />
+                    <p className="text-[11px] font-black tracking-[0.5em] uppercase opacity-40 text-center">Awaiting Signal</p>
                 </div>
             )}
           </div>

@@ -5,7 +5,7 @@
  */
 import { XMarkIcon, BoltIcon, ExclamationTriangleIcon, ChevronDownIcon, MusicalNoteIcon, StopIcon, SignalIcon, ChatBubbleBottomCenterIcon } from '@heroicons/react/24/solid';
 // Added missing icon imports
-import { ArrowPathIcon, MicrophoneIcon } from '@heroicons/react/24/outline';
+import { ArrowPathIcon, MicrophoneIcon, SparklesIcon } from '@heroicons/react/24/outline';
 import React, { useEffect, useRef, useState, useImperativeHandle, forwardRef } from 'react';
 import { LiveClient } from '../services/live-client';
 import { WITTY_PROMPT, PROFESSIONAL_PROMPT, LivePromptMode, VoiceEngine, Provider } from './SettingsModal';
@@ -14,7 +14,8 @@ interface LivePulseProps {
   onClose: () => void;
   isActive: boolean;
   currentHtml?: string;
-  onAtomicUpdate?: (toolName: string, args: any) => void;
+  // Fixed: onAtomicUpdate now returns success status as required by LiveClient
+  onAtomicUpdate?: (toolName: string, args: any) => { success: boolean; error?: string };
   mode?: 'overlay' | 'panel';
   liveConfig: { 
       model: string; 
@@ -41,7 +42,7 @@ export const LivePulse = forwardRef<any, LivePulseProps>(({
 }, ref) => {
   const [volume, setVolume] = useState(0);
   const [latency, setLatency] = useState<number | null>(null);
-  const [status, setStatus] = useState<'connecting' | 'listening' | 'thinking' | 'speaking' | 'error' | 'key_required'>('connecting');
+  const [status, setStatus] = useState<'connecting' | 'listening' | 'thinking' | 'speaking' | 'error' | 'key_required' | 'transcoding'>('connecting');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   
   const [transcriptionHistory, setTranscriptionHistory] = useState<{source: 'user' | 'model', text: string}[]>([]);
@@ -55,6 +56,13 @@ export const LivePulse = forwardRef<any, LivePulseProps>(({
   useEffect(() => {
     callbacksRef.current = { onAtomicUpdate };
   }, [onAtomicUpdate]);
+
+  // SYNC CONTEXT: If currentHtml changes while active, tell the client
+  useEffect(() => {
+      if (isActive && clientRef.current && currentHtml) {
+          clientRef.current.updateContext(currentHtml);
+      }
+  }, [currentHtml, isActive]);
 
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
@@ -93,9 +101,11 @@ export const LivePulse = forwardRef<any, LivePulseProps>(({
             currentHtml || "", 
             {
                 onToolCall: (toolName, args) => {
+                    // Fixed: Forwarding result from props callback to meet LiveClient expectation
                     if (callbacksRef.current.onAtomicUpdate) {
-                        callbacksRef.current.onAtomicUpdate(toolName, args);
+                        return callbacksRef.current.onAtomicUpdate(toolName, args);
                     }
+                    return { success: true };
                 },
                 onVolume: (vol) => setVolume(vol),
                 onStatusChange: (s) => setStatus(s as any),
@@ -163,9 +173,15 @@ export const LivePulse = forwardRef<any, LivePulseProps>(({
             </div>
             <div className="flex items-center gap-4">
                 <div className="flex items-center gap-2">
-                    <div className={`w-2 h-2 rounded-full ${status === 'listening' ? 'bg-emerald-500 animate-pulse' : (status === 'speaking' ? 'bg-blue-500 animate-bounce' : (status === 'thinking' ? 'bg-amber-400 animate-pulse' : 'bg-zinc-700'))}`}></div>
+                    <div className={`w-2 h-2 rounded-full ${status === 'listening' ? 'bg-emerald-500 animate-pulse' : (status === 'speaking' ? 'bg-blue-500 animate-bounce' : (status === 'thinking' ? 'bg-amber-400 animate-pulse' : (status === 'transcoding' ? 'bg-pink-500 animate-pulse' : 'bg-zinc-700')))}`}></div>
                     <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">{status}</span>
                 </div>
+                {status === 'transcoding' && (
+                    <div className="flex items-center gap-1.5 px-2 py-0.5 bg-pink-500/10 border border-pink-500/20 rounded text-[9px] font-black text-pink-400 uppercase tracking-tighter animate-in fade-in zoom-in-95">
+                        <SparklesIcon className="w-3 h-3" />
+                        Transcoding Voice
+                    </div>
+                )}
                 {latency && (
                     <div className="flex items-center gap-1">
                         <SignalIcon className="w-2.5 h-2.5 text-zinc-700" />
@@ -259,13 +275,13 @@ export const LivePulse = forwardRef<any, LivePulseProps>(({
                 <div className="flex-1 h-12 bg-black/40 border border-zinc-800 rounded-xl px-4 flex items-center justify-between group hover:border-zinc-700 transition-colors">
                     <span className="text-[10px] font-black text-zinc-700 uppercase tracking-widest group-hover:text-zinc-500">VOICE ACTIVE</span>
                     <div className="flex gap-1">
-                        <div className={`w-1 h-3 bg-blue-500/40 rounded-full ${status === 'speaking' ? 'animate-pulse' : ''}`}></div>
-                        <div className={`w-1 h-4 bg-blue-500/60 rounded-full ${status === 'speaking' ? 'animate-pulse delay-75' : ''}`}></div>
-                        <div className={`w-1 h-2 bg-blue-500/20 rounded-full ${status === 'speaking' ? 'animate-pulse delay-150' : ''}`}></div>
+                        <div className={`w-1 h-3 bg-blue-500/40 rounded-full ${status === 'speaking' || status === 'transcoding' ? 'animate-pulse' : ''}`}></div>
+                        <div className={`w-1 h-4 bg-blue-500/60 rounded-full ${status === 'speaking' || status === 'transcoding' ? 'animate-pulse delay-75' : ''}`}></div>
+                        <div className={`w-1 h-2 bg-blue-500/20 rounded-full ${status === 'speaking' || status === 'transcoding' ? 'animate-pulse delay-150' : ''}`}></div>
                     </div>
                 </div>
 
-                {status === 'speaking' && (
+                {(status === 'speaking' || status === 'transcoding') && (
                     <button 
                         onClick={handleStopAudio}
                         className="w-12 h-12 flex items-center justify-center bg-red-500/10 text-red-500 border border-red-500/20 rounded-xl hover:bg-red-500/20 transition-all shadow-lg shadow-red-900/10"

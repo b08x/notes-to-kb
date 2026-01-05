@@ -3,7 +3,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Creation } from './components/CreationHistory';
 import { bringToLife, ChatMessage, Attachment } from './services/gemini';
 import { Chat, Message } from './components/Chat';
@@ -39,6 +39,7 @@ const App: React.FC = () => {
   
   const [isLiveActive, setIsLiveActive] = useState(false);
   const livePulseRef = useRef<any>(null);
+  const blobRegistry = useRef<Set<string>>(new Set());
   
   const [showHelp, setShowHelp] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -63,6 +64,19 @@ const App: React.FC = () => {
 
   const activeProject = projects.find(p => p.id === activeProjectId) || projects[0];
   const isInitialState = activeProject.messages.length === 0 && !isGenerating;
+
+  // Revoke blob URLs on unmount
+  useEffect(() => {
+    return () => {
+      blobRegistry.current.forEach(url => URL.revokeObjectURL(url));
+      blobRegistry.current.clear();
+    };
+  }, []);
+
+  const trackBlob = (url: string) => {
+    blobRegistry.current.add(url);
+    return url;
+  };
 
   const currentArtifacts = useMemo(() => {
       const arts: Creation[] = [];
@@ -96,6 +110,16 @@ const App: React.FC = () => {
 
   const handleDeleteProject = (id: string) => {
     setProjects(prev => {
+      const target = prev.find(p => p.id === id);
+      if (target) {
+          target.messages.forEach(m => {
+              m.attachments?.forEach(a => {
+                  URL.revokeObjectURL(a.url);
+                  blobRegistry.current.delete(a.url);
+              });
+          });
+      }
+
       const newProjects = prev.filter(p => p.id !== id);
       if (newProjects.length === 0) {
         const defaultProject: ProjectData = {
@@ -128,10 +152,21 @@ const App: React.FC = () => {
       }
   };
 
-  const handleAtomicUpdate = (toolName: string, args: any) => {
-    if (!activeProject.activeCreation) return;
-    
-    const iframe = document.querySelector('iframe');
+  /**
+   * Performs an atomic update by sending a postMessage to the iframe
+   * and updating the internal state using a functional setter to avoid race conditions.
+   */
+  const handleAtomicUpdate = (toolName: string, args: any): { success: boolean; error?: string } => {
+    // 0. Argument Validation
+    if (!args || typeof args.selector !== 'string' || !args.selector) {
+        return { success: false, error: `Invalid or missing selector provided by model: ${args?.selector}` };
+    }
+    if (typeof args.html !== 'string') {
+        return { success: false, error: `Invalid or missing html provided by model.` };
+    }
+
+    // 1. Visual Update
+    const iframe = document.querySelector('iframe[title="Preview"]') as HTMLIFrameElement;
     if (iframe && iframe.contentWindow) {
         iframe.contentWindow.postMessage({
             type: toolName === 'update_element' ? 'UPDATE_ELEMENT' : 'APPEND_ELEMENT',
@@ -140,20 +175,47 @@ const App: React.FC = () => {
         }, '*');
     }
 
-    const { id, html: currentHtml } = activeProject.activeCreation;
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(currentHtml, 'text/html');
-    try {
-        if (toolName === 'update_element') {
+    // 2. State Persistence (Functional to avoid stale closures)
+    let result: { success: boolean; error?: string } = { success: true };
+    
+    setProjects(prev => {
+        const project = prev.find(p => p.id === activeProjectId);
+        if (!project || !project.activeCreation) return prev;
+
+        const currentHtml = project.activeCreation.html;
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(currentHtml, 'text/html');
+        
+        try {
             const target = doc.querySelector(args.selector);
-            if (target) target.innerHTML = args.html;
-        } else if (toolName === 'append_element') {
-            const target = doc.querySelector(args.selector) || doc.body;
-            target.insertAdjacentHTML('beforeend', args.html);
+            if (!target) {
+                console.warn(`Atomic update failed: Selector "${args.selector}" not found.`);
+                result = { success: false, error: `Selector "${args.selector}" not found in current document structure.` };
+                return prev;
+            }
+
+            if (toolName === 'update_element') {
+                target.innerHTML = args.html;
+            } else if (toolName === 'append_element') {
+                target.insertAdjacentHTML('beforeend', args.html);
+            }
+            
+            const updatedHtml = doc.documentElement.outerHTML;
+            const creationId = project.activeCreation.id;
+
+            return prev.map(p => p.id === activeProjectId ? {
+                ...p,
+                lastModified: new Date(),
+                messages: p.messages.map(m => m.artifact?.id === creationId ? { ...m, artifact: { ...m.artifact, html: updatedHtml } } : m),
+                activeCreation: { ...p.activeCreation!, html: updatedHtml }
+            } : p);
+        } catch (e: any) {
+            result = { success: false, error: e.message };
+            return prev;
         }
-        const updatedHtml = doc.documentElement.outerHTML;
-        handleUpdateArtifact(id, updatedHtml, false);
-    } catch (e) { console.error("Atomic Update Failed:", e); }
+    });
+
+    return result;
   };
 
   const handleSendMessage = async (text: string, files: File[] = [], fileType: 'source' | 'screenshot' = 'source', templateType: string = 'auto') => {
@@ -169,7 +231,7 @@ const App: React.FC = () => {
         timestamp: new Date(),
         attachments: files.length > 0 ? files.map(f => ({
             type: f.type === 'application/pdf' ? 'pdf' : 'image',
-            url: URL.createObjectURL(f),
+            url: trackBlob(URL.createObjectURL(f)),
             category: fileType
         })) : undefined
     };
