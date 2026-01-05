@@ -38,46 +38,23 @@ const appendElementTool: FunctionDeclaration = {
  */
 function parseError(error: any): string {
     const rawMessage = error.message || String(error);
-    
-    // Check for network errors
-    if (rawMessage.includes("Failed to fetch")) {
-        return "Network connection failed. Please check your internet.";
-    }
-
+    if (rawMessage.includes("Failed to fetch")) return "Network connection failed. Reconnecting...";
     try {
-        // Find the JSON part if it's wrapped in other text
         let jsonStr = rawMessage;
         const start = rawMessage.indexOf("{");
         const end = rawMessage.lastIndexOf("}");
-        if (start !== -1 && end !== -1) {
-            jsonStr = rawMessage.substring(start, end + 1);
-        }
-
+        if (start !== -1 && end !== -1) jsonStr = rawMessage.substring(start, end + 1);
         const parsed = JSON.parse(jsonStr);
         const apiError = parsed.error || parsed;
-
-        // Handle nested error messages (common in some SDK/Proxy layers)
-        if (typeof apiError.message === 'string' && apiError.message.includes("{")) {
-            return parseError({ message: apiError.message });
-        }
-
         if (apiError.code === 429 || apiError.status === "RESOURCE_EXHAUSTED") {
-            const retryDelay = apiError.details?.find((d: any) => d.retryDelay)?.retryDelay || "shortly";
-            return `Rate limit exceeded (429). Please wait about ${retryDelay} before trying again.`;
+            return "Rate limit exceeded. Waiting to reconnect...";
         }
-
         if (apiError.message) return apiError.message;
-    } catch (e) {
-        // Not JSON, return raw if it's not too long
-    }
-    
+    } catch (e) {}
     return rawMessage.length > 200 ? "An unexpected API error occurred." : rawMessage;
 }
 
-/**
- * Helper to call a function with exponential backoff retry for transient errors.
- */
-async function withRetry<T>(fn: () => Promise<T>, maxRetries = 2): Promise<T> {
+async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
     let lastError: any;
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
         try {
@@ -90,37 +67,24 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries = 2): Promise<T> {
                                 message.includes("Failed to fetch") ||
                                 message.includes("503") ||
                                 message.includes("504");
-            
             if (!isRetryable || attempt === maxRetries) break;
-            
-            // Exponential backoff: 1.5s, 3s, 4.5s...
-            const delay = Math.pow(2, attempt) * 1500;
+            const delay = Math.pow(2, attempt) * 2000;
             await new Promise(r => setTimeout(r, delay));
         }
     }
     throw lastError;
 }
 
-/**
- * Normalizes tool parameters for non-Gemini providers (OpenRouter/Mistral/OpenAI)
- * which expect lowercase types (e.g. 'string' instead of 'STRING').
- */
 function normalizeSchema(schema: any): any {
   if (!schema || typeof schema !== 'object') return schema;
   const newSchema = { ...schema };
-  if (newSchema.type && typeof newSchema.type === 'string') {
-    newSchema.type = newSchema.type.toLowerCase();
-  }
+  if (newSchema.type && typeof newSchema.type === 'string') newSchema.type = newSchema.type.toLowerCase();
   if (newSchema.properties) {
     const newProps: any = {};
-    for (const key in newSchema.properties) {
-      newProps[key] = normalizeSchema(newSchema.properties[key]);
-    }
+    for (const key in newSchema.properties) newProps[key] = normalizeSchema(newSchema.properties[key]);
     newSchema.properties = newProps;
   }
-  if (newSchema.items) {
-    newSchema.items = normalizeSchema(newSchema.items);
-  }
+  if (newSchema.items) newSchema.items = normalizeSchema(newSchema.items);
   return newSchema;
 }
 
@@ -143,6 +107,7 @@ export interface LiveClientCallbacks {
     onTranscription?: (text: string, source: 'user' | 'model') => void;
     onStatusChange?: (status: 'listening' | 'thinking' | 'speaking' | 'idle') => void;
     onError?: (error: Error) => void;
+    onLatency?: (ms: number) => void;
 }
 
 export class LiveClient {
@@ -155,6 +120,8 @@ export class LiveClient {
   private isConnected = false;
   private isProcessing = false;
   private currentAbortController: AbortController | null = null;
+  private reconnectTimeout: any = null;
+  private startTime: number = 0;
 
   constructor(initialContext: string = "", callbacks: LiveClientCallbacks = {}) {
     this.initialContext = initialContext;
@@ -164,10 +131,7 @@ export class LiveClient {
   private sanitizeModel(modelId: string): string {
     const defaultModel = this.currentConfig?.provider === 'gemini' ? 'gemini-3-flash-preview' : 'google/gemini-flash-1.5';
     if (!modelId) return defaultModel;
-    
-    if (modelId.toLowerCase().includes('native-audio')) {
-      return 'gemini-3-flash-preview';
-    }
+    if (modelId.toLowerCase().includes('native-audio')) return 'gemini-3-flash-preview';
     return modelId;
   }
 
@@ -178,7 +142,6 @@ export class LiveClient {
     }
     this.isConnected = true;
 
-    // Initialize TTS
     if (config.voiceEngine === 'elevenlabs' && config.elevenLabs?.key) {
         const el = new ElevenLabsTTS(config.elevenLabs.key, config.elevenLabs.voiceId);
         el.setOnVolume((vol) => this.callbacks.onVolume?.(vol));
@@ -189,9 +152,16 @@ export class LiveClient {
         this.ttsService = gem;
     }
 
+    this.initSTT();
+    this.processUserCommand("[SYSTEM] Connection established. Greet the user briefly.");
+  }
+
+  private initSTT() {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-        throw new Error("Speech recognition not supported in this browser.");
+    if (!SpeechRecognition) throw new Error("Speech recognition not supported.");
+
+    if (this.recognition) {
+        try { this.recognition.stop(); } catch(e) {}
     }
 
     this.recognition = new SpeechRecognition();
@@ -208,7 +178,6 @@ export class LiveClient {
         }
         if (interimTranscript) this.callbacks.onTranscription?.(interimTranscript, 'user');
         if (finalTranscript && !this.isProcessing) {
-            // INTERRUPT CURRENT AUDIO IF USER SPEAKS
             if (this.ttsService) this.ttsService.stopAudio();
             this.processUserCommand(finalTranscript);
         }
@@ -216,30 +185,33 @@ export class LiveClient {
 
     this.recognition.onerror = (event: any) => {
         if (event.error === 'no-speech') return;
-        console.error("STT Error:", event.error);
-        this.callbacks.onError?.(new Error(`Speech recognition error: ${event.error}`));
+        console.warn("STT Error, attempting restart:", event.error);
+        this.scheduleReconnect();
     };
 
     this.recognition.onend = () => { 
-        if (this.isConnected) {
-            try { this.recognition.start(); } catch (e) {}
-        }
+        if (this.isConnected) this.scheduleReconnect();
     };
 
-    this.recognition.start();
+    try { this.recognition.start(); } catch(e) {}
     this.callbacks.onStatusChange?.('listening');
-    this.processUserCommand("[SYSTEM] Connection established. Greet the user briefly.");
+  }
+
+  private scheduleReconnect() {
+      if (this.reconnectTimeout) clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = setTimeout(() => {
+          if (this.isConnected) this.initSTT();
+      }, 1000);
   }
 
   private async processUserCommand(text: string) {
-    if (this.isProcessing) {
-        this.currentAbortController?.abort();
-    }
+    if (this.isProcessing) this.currentAbortController?.abort();
     
     this.isProcessing = true;
     this.currentAbortController = new AbortController();
     this.callbacks.onStatusChange?.('thinking');
     this.callbacks.onTranscription?.(text, 'user');
+    this.startTime = performance.now();
 
     try {
         await withRetry(async () => {
@@ -251,9 +223,7 @@ export class LiveClient {
         });
     } catch (error: any) {
         if (error.name === 'AbortError') return;
-        
         const friendlyMsg = parseError(error);
-        console.error("Pulse Processing Error:", error);
         this.callbacks.onError?.(new Error(friendlyMsg));
     } finally {
         this.isProcessing = false;
@@ -274,9 +244,15 @@ export class LiveClient {
     });
 
     let fullModelResponse = "";
+    let firstChunkReceived = false;
     this.callbacks.onStatusChange?.('speaking');
+
     for await (const chunk of stream) {
         if (this.currentAbortController?.signal.aborted) break;
+        if (!firstChunkReceived) {
+            this.callbacks.onLatency?.(Math.round(performance.now() - this.startTime));
+            firstChunkReceived = true;
+        }
         
         if (chunk.functionCalls) {
             for (const call of chunk.functionCalls) this.callbacks.onToolCall?.(call.name, call.args);
@@ -288,14 +264,12 @@ export class LiveClient {
             if (this.ttsService) this.ttsService.speak(textPart);
         }
     }
+    if (this.ttsService && 'flush' in this.ttsService) (this.ttsService as ElevenLabsTTS).flush();
   }
 
   private async processWithOpenRouter(text: string) {
     const apiKey = this.currentConfig?.openRouterKey;
-    if (!apiKey) throw new Error("OpenRouter API Key is missing.");
-
-    const normalizedUpdateParams = normalizeSchema(updateElementTool.parameters);
-    const normalizedAppendParams = normalizeSchema(appendElementTool.parameters);
+    if (!apiKey) throw new Error("API Key missing.");
 
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
@@ -312,8 +286,8 @@ export class LiveClient {
                 { role: 'user', content: `DOCUMENT_CONTEXT:\n${this.initialContext}\n\nUSER_COMMAND: ${text}` }
             ],
             tools: [
-                { type: 'function', function: { name: "update_element", description: updateElementTool.description, parameters: normalizedUpdateParams } },
-                { type: 'function', function: { name: "append_element", description: appendElementTool.description, parameters: normalizedAppendParams } }
+                { type: 'function', function: { name: "update_element", description: updateElementTool.description, parameters: normalizeSchema(updateElementTool.parameters) } },
+                { type: 'function', function: { name: "append_element", description: appendElementTool.description, parameters: normalizeSchema(appendElementTool.parameters) } }
             ],
             stream: true,
             temperature: 0.3
@@ -321,22 +295,24 @@ export class LiveClient {
         signal: this.currentAbortController?.signal
     });
 
-    if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(errText);
-    }
+    if (!response.ok) throw new Error(await response.text());
     
     const reader = response.body?.getReader();
     const decoder = new TextDecoder();
     if (!reader) return;
 
     let fullModelResponse = "";
+    let firstChunkReceived = false;
     this.callbacks.onStatusChange?.('speaking');
 
     let buffer = '';
     while (true) {
         const { done, value } = await reader.read();
         if (done) break;
+        if (!firstChunkReceived) {
+            this.callbacks.onLatency?.(Math.round(performance.now() - this.startTime));
+            firstChunkReceived = true;
+        }
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');
         buffer = lines.pop() || '';
@@ -348,7 +324,6 @@ export class LiveClient {
                 try {
                     const data = JSON.parse(trimmed.slice(6));
                     const delta = data.choices[0]?.delta;
-                    
                     if (delta?.tool_calls) {
                         for (const tc of delta.tool_calls) {
                             if (tc.function?.arguments) {
@@ -359,7 +334,6 @@ export class LiveClient {
                             }
                         }
                     }
-
                     if (delta?.content) {
                         fullModelResponse += delta.content;
                         this.callbacks.onTranscription?.(fullModelResponse, 'model');
@@ -369,6 +343,7 @@ export class LiveClient {
             }
         }
     }
+    if (this.ttsService && 'flush' in this.ttsService) (this.ttsService as ElevenLabsTTS).flush();
   }
 
   public stopAudio() {
@@ -383,15 +358,10 @@ export class LiveClient {
 
   public stop() {
     this.isConnected = false;
+    if (this.reconnectTimeout) clearTimeout(this.reconnectTimeout);
     this.currentAbortController?.abort();
-    if (this.recognition) { 
-        try { this.recognition.stop(); } catch(e) {}
-        this.recognition = null; 
-    }
-    if (this.ttsService) { 
-        this.ttsService.stop(); 
-        this.ttsService = null; 
-    }
+    if (this.recognition) { try { this.recognition.stop(); } catch(e) {} }
+    if (this.ttsService) this.ttsService.stop();
     this.ai = null;
   }
 }

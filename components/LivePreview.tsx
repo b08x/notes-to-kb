@@ -179,12 +179,44 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
             td { padding: 16px 20px; border-bottom: 1px solid #f1f5f9; }
             tr:last-child td { border-bottom: none; }
             [contenteditable="true"]:focus { outline: none; box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.25); border-radius: 6px; }
+            
+            /* Streaming Diff Animation - UX-001 */
+            @keyframes kb-diff-pulse {
+                0% { background-color: rgba(52, 211, 153, 0.1); }
+                50% { background-color: rgba(52, 211, 153, 0.3); }
+                100% { background-color: rgba(52, 211, 153, 0.0); }
+            }
+            .kb-updated-node {
+                animation: kb-diff-pulse 2s ease-out;
+            }
+
             /* Animations */
             @keyframes slideUpFade { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
             body > * { animation: slideUpFade 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
         </style>`;
         return html.includes('</body>') ? html.replace('</body>', `${styleTag}</body>`) : html + styleTag;
     }, [creation?.html, imageMap]);
+
+    // Handle tool-call driven updates with a visual "diff" effect
+    useEffect(() => {
+        if (!iframeRef.current?.contentDocument) return;
+        // Inject a script into the iframe to handle adding the flash effect when elements change
+        const iframeDoc = iframeRef.current.contentDocument;
+        const observer = new MutationObserver((mutations) => {
+            mutations.forEach(mutation => {
+                if (mutation.type === 'childList' || mutation.type === 'characterData') {
+                    const target = mutation.target.nodeType === 1 ? (mutation.target as HTMLElement) : mutation.target.parentElement;
+                    if (target) {
+                        target.classList.add('kb-updated-node');
+                        setTimeout(() => target.classList.remove('kb-updated-node'), 2000);
+                    }
+                }
+            });
+        });
+
+        observer.observe(iframeDoc.body, { childList: true, subtree: true, characterData: true });
+        return () => observer.disconnect();
+    }, [creation?.id]); // Re-run when switching documents
 
     useEffect(() => {
         const iframe = iframeRef.current;
