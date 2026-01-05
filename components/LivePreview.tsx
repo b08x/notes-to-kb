@@ -5,18 +5,15 @@
 */
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { 
-    ArrowDownTrayIcon, 
     PencilIcon, 
     CheckIcon, 
     PaintBrushIcon, 
     ArrowsPointingOutIcon, 
     ArrowsPointingInIcon, 
     SparklesIcon, 
-    BoltIcon, 
     CheckCircleIcon,
     DocumentArrowDownIcon,
-    DocumentIcon,
-    EyeIcon
+    DocumentIcon
 } from '@heroicons/react/24/outline';
 import { Creation } from './CreationHistory';
 import { DocxGenerator } from '../lib/services/DocxGenerator';
@@ -119,8 +116,8 @@ const PdfRenderer = ({ dataUrl }: { dataUrl: string }) => {
     renderPdf();
   }, [dataUrl]);
   return (
-    <div className="relative w-full h-full flex items-center justify-center p-4">
-        <canvas ref={canvasRef} className={`max-w-full max-h-full shadow-lg transition-opacity duration-700 ${loading ? 'opacity-0' : 'opacity-100'}`}/>
+    <div className="relative w-full h-full flex items-center justify-center p-4 bg-zinc-900/50">
+        <canvas ref={canvasRef} className={`max-w-full max-h-full shadow-2xl rounded-sm border border-zinc-700 transition-opacity duration-700 ${loading ? 'opacity-0' : 'opacity-100'}`}/>
     </div>
   );
 };
@@ -158,31 +155,33 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
                 font-family: 'Inter', -apple-system, sans-serif; 
                 line-height: 1.65; 
                 color: #374151; 
-                max-width: 840px; 
+                max-width: 800px; 
                 margin: 0 auto; 
-                padding: 60px 40px; 
+                padding: 80px 60px; 
                 background-color: #ffffff;
                 -webkit-font-smoothing: antialiased;
             }
-            h1 { font-family: 'Inter', sans-serif; font-size: 2.75rem; font-weight: 800; color: #111827; letter-spacing: -0.025em; margin-bottom: 0.5rem; line-height: 1.2; }
-            .metadata { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 3rem; border-bottom: 1px solid #f3f4f6; padding-bottom: 1rem; }
-            h2 { font-size: 1.75rem; font-weight: 700; color: #111827; margin-top: 3.5rem; margin-bottom: 1.25rem; letter-spacing: -0.015em; }
-            h3 { font-size: 1.25rem; font-weight: 600; color: #1f2937; margin-top: 2.5rem; margin-bottom: 1rem; }
-            p { margin-bottom: 1.25rem; font-size: 1.05rem; }
-            ul, ol { margin-bottom: 2rem; padding-left: 1.5rem; }
-            li { margin-bottom: 0.75rem; }
-            img { max-width: 100%; height: auto; display: block; margin: 3rem auto; border-radius: 12px; border: 1px solid #f3f4f6; box-shadow: 0 10px 30px -5px rgba(0,0,0,0.05); }
-            .ai-diagram { margin: 3rem 0; background: #fafafa; border-radius: 16px; border: 1px solid #f1f1f1; padding: 2rem; }
-            .note, .warning { padding: 1.5rem; border-radius: 12px; margin: 2rem 0; font-size: 0.95rem; }
-            .note { background: #f0f9ff; border-left: 4px solid #0ea5e9; color: #075985; }
-            .warning { background: #fff7ed; border-left: 4px solid #f97316; color: #9a3412; }
-            table { width: 100%; border-collapse: collapse; margin: 2.5rem 0; font-size: 0.95rem; }
-            th { text-align: left; background: #f9fafb; padding: 12px 16px; border-bottom: 2px solid #e5e7eb; color: #111827; font-weight: 600; }
-            td { padding: 12px 16px; border-bottom: 1px solid #f3f4f6; }
-            [contenteditable="true"]:focus { outline: none; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2); border-radius: 4px; }
+            h1 { font-family: 'Inter', sans-serif; font-size: 3rem; font-weight: 800; color: #111827; letter-spacing: -0.03em; margin-bottom: 0.75rem; line-height: 1.1; }
+            .metadata { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 3.5rem; border-bottom: 2px solid #f3f4f6; padding-bottom: 1.25rem; }
+            h2 { font-size: 1.875rem; font-weight: 700; color: #111827; margin-top: 4rem; margin-bottom: 1.5rem; letter-spacing: -0.02em; border-left: 4px solid #3b82f6; padding-left: 1rem; margin-left: -1.25rem; }
+            h3 { font-size: 1.4rem; font-weight: 600; color: #1f2937; margin-top: 3rem; margin-bottom: 1.25rem; }
+            p { margin-bottom: 1.5rem; font-size: 1.1rem; }
+            ul, ol { margin-bottom: 2.5rem; padding-left: 1.75rem; }
+            li { margin-bottom: 1rem; }
+            li strong { color: #111827; font-weight: 700; }
+            img { max-width: 100%; height: auto; display: block; margin: 3.5rem auto; border-radius: 16px; border: 1px solid #e5e7eb; box-shadow: 0 20px 40px -10px rgba(0,0,0,0.1); }
+            .ai-diagram { margin: 4rem 0; background: #f9fafb; border-radius: 20px; border: 1px solid #e5e7eb; padding: 2.5rem; }
+            .note, .warning { padding: 1.75rem; border-radius: 14px; margin: 2.5rem 0; font-size: 1rem; }
+            .note { background: #eff6ff; border-left: 6px solid #3b82f6; color: #1e40af; }
+            .warning { background: #fffaf5; border-left: 6px solid #f97316; color: #9a3412; }
+            table { width: 100%; border-collapse: separate; border-spacing: 0; margin: 3rem 0; font-size: 1rem; border-radius: 12px; overflow: hidden; border: 1px solid #e5e7eb; }
+            th { text-align: left; background: #f8fafc; padding: 16px 20px; border-bottom: 2px solid #e2e8f0; color: #0f172a; font-weight: 700; }
+            td { padding: 16px 20px; border-bottom: 1px solid #f1f5f9; }
+            tr:last-child td { border-bottom: none; }
+            [contenteditable="true"]:focus { outline: none; box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.25); border-radius: 6px; }
             /* Animations */
-            @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-            body > * { animation: fadeIn 0.6s ease-out forwards; }
+            @keyframes slideUpFade { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+            body > * { animation: slideUpFade 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
         </style>`;
         return html.includes('</body>') ? html.replace('</body>', `${styleTag}</body>`) : html + styleTag;
     }, [creation?.html, imageMap]);
@@ -236,130 +235,131 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
     };
 
     const phases = [
-        { id: 'context', label: 'Analyzing Context', trigger: 'context' },
-        { id: 'theme', label: 'Drafting UI Theme', trigger: 'theme' },
-        { id: 'hierarchy', label: 'Structuring Content', trigger: 'hierarchy' },
-        { id: 'assets', label: 'Injecting Visuals', trigger: 'visual' },
-        { id: 'logic', label: 'Formulating Logic', trigger: 'logic' },
+        { id: 'context', label: 'Semantic Analysis', trigger: 'context' },
+        { id: 'theme', label: 'Aesthetic Generation', trigger: 'theme' },
+        { id: 'hierarchy', label: 'Document Hierarchy', trigger: 'hierarchy' },
+        { id: 'assets', label: 'Visual Integration', trigger: 'visual' },
+        { id: 'logic', label: 'Process Formulation', trigger: 'logic' },
     ];
 
     const currentPhaseIndex = phases.findIndex(p => loadingMessage?.toLowerCase().includes(p.trigger));
 
   return (
-    <div className={`flex flex-col h-full bg-[#09090b] border-l border-zinc-800 transition-all duration-300 ${className} ${isFullScreen ? '!fixed !inset-0 !z-[100] !w-screen !h-screen !border-0' : ''}`}>
-      <div className="h-14 flex items-center justify-between px-4 border-b border-zinc-800 bg-[#09090b]/80 backdrop-blur-xl sticky top-0 z-10 shrink-0">
-        <div className="flex items-center space-x-3 shrink-0">
-            <div className={`w-2 h-2 rounded-full ${isLoading ? 'bg-blue-500 animate-pulse' : 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]'}`}></div>
-            <span className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em] whitespace-nowrap">
-                {isLoading ? 'Synthesizing' : (!creation ? 'System Ready' : (isEditing ? 'Drafting' : 'Manifest')) }
-            </span>
-            {creation && (
-              <div className="flex items-center gap-2 pl-2 border-l border-zinc-800">
-                <span className="text-[11px] font-bold text-zinc-300 truncate max-w-[180px]">{creation.name}</span>
-              </div>
-            )}
+    <div className={`flex flex-col h-full bg-[#050507] border-l border-zinc-800 transition-all duration-300 ${className} ${isFullScreen ? '!fixed !inset-0 !z-[100] !w-screen !h-screen !border-0' : ''}`}>
+      {/* Refined Header */}
+      <div className="h-16 flex items-center justify-between px-6 border-b border-zinc-800 bg-[#09090b]/90 backdrop-blur-2xl sticky top-0 z-10 shrink-0">
+        <div className="flex items-center space-x-4 shrink-0">
+            <div className="relative">
+                <div className={`w-3 h-3 rounded-full ${isLoading ? 'bg-blue-500 animate-pulse' : 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.4)]'}`}></div>
+                {isLoading && <div className="absolute inset-0 w-3 h-3 rounded-full bg-blue-500 animate-ping opacity-40"></div>}
+            </div>
+            <div className="flex flex-col">
+                <span className="text-[9px] font-black text-zinc-600 uppercase tracking-[0.3em] leading-none mb-1">
+                    {isLoading ? 'Synthesizing' : 'Artifact Preview'}
+                </span>
+                {creation && (
+                    <span className="text-[11px] font-bold text-zinc-100 truncate max-w-[220px]">{creation.name}</span>
+                )}
+            </div>
         </div>
         
         {creation && (
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-2">
                 {!isEditing && !showStyleEditor ? (
-                    <div className="flex items-center p-1 bg-zinc-900/50 rounded-xl border border-zinc-800">
-                        <button onClick={() => setIsEditing(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-all"><PencilIcon className="w-3 h-3" /> Edit</button>
-                        <button onClick={() => setShowStyleEditor(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-all"><PaintBrushIcon className="w-3 h-3" /> Style</button>
+                    <div className="flex items-center p-1 bg-zinc-900/80 rounded-xl border border-zinc-800 shadow-sm mr-2">
+                        <button onClick={() => setIsEditing(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-black uppercase text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-all"><PencilIcon className="w-3.5 h-3.5" /> Edit</button>
+                        <button onClick={() => setShowStyleEditor(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-black uppercase text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-all"><PaintBrushIcon className="w-3.5 h-3.5" /> Style</button>
                     </div>
                 ) : (
-                    <div className="flex items-center gap-2">
-                        <button onClick={handleSaveEdit} className="flex items-center gap-1.5 px-4 py-1.5 text-[10px] font-black uppercase text-emerald-900 bg-emerald-400 hover:bg-emerald-300 rounded-lg transition-all shadow-[0_0_20px_rgba(52,211,153,0.2)]"><CheckIcon className="w-3 h-3" /> Commit</button>
-                        <button onClick={() => { setIsEditing(false); setShowStyleEditor(false); }} className="px-3 py-1.5 text-[10px] font-bold text-zinc-500 hover:text-zinc-200 transition-colors">Discard</button>
+                    <div className="flex items-center gap-2 mr-2">
+                        <button onClick={handleSaveEdit} className="flex items-center gap-1.5 px-4 py-1.5 text-[10px] font-black uppercase text-emerald-950 bg-emerald-400 hover:bg-emerald-300 rounded-lg transition-all shadow-[0_0_20px_rgba(52,211,153,0.3)]"><CheckIcon className="w-3.5 h-3.5" /> Save Changes</button>
+                        <button onClick={() => { setIsEditing(false); setShowStyleEditor(false); }} className="px-3 py-1.5 text-[10px] font-bold text-zinc-500 hover:text-zinc-300 transition-colors">Discard</button>
                     </div>
                 )}
                 
-                <div className="w-px h-4 bg-zinc-800 mx-2"></div>
+                <div className="w-px h-6 bg-zinc-800 mx-2"></div>
                 
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-2">
                     <button 
                         onClick={handleExportPdf} 
                         disabled={!!isExporting} 
                         className={`
-                            group relative p-2 text-zinc-400 hover:text-red-400 bg-zinc-900/50 hover:bg-red-500/10 border border-zinc-800 hover:border-red-500/20 rounded-xl transition-all
+                            group relative p-2 text-zinc-400 hover:text-orange-400 bg-zinc-900/50 hover:bg-orange-500/10 border border-zinc-800 hover:border-orange-500/30 rounded-xl transition-all shadow-sm
                             ${isExporting === 'pdf' ? 'cursor-not-allowed opacity-50' : ''}
                         `}
-                        title="Export to PDF"
+                        title="Export as PDF"
                     >
-                        <DocumentIcon className={`w-4 h-4 ${isExporting === 'pdf' ? 'animate-pulse' : ''}`} />
-                        {isExporting === 'pdf' && <span className="absolute -bottom-6 left-1/2 -translate-x-1/2 text-[8px] font-bold text-zinc-500">PDF...</span>}
+                        <DocumentIcon className={`w-4.5 h-4.5 ${isExporting === 'pdf' ? 'animate-pulse' : ''}`} />
                     </button>
 
                     <button 
                         onClick={handleExportDocx} 
                         disabled={!!isExporting} 
                         className={`
-                            group relative p-2 text-zinc-400 hover:text-blue-400 bg-zinc-900/50 hover:bg-blue-500/10 border border-zinc-800 hover:border-blue-500/20 rounded-xl transition-all
+                            group relative p-2 text-zinc-400 hover:text-blue-400 bg-zinc-900/50 hover:bg-blue-500/10 border border-zinc-800 hover:border-blue-500/30 rounded-xl transition-all shadow-sm
                             ${isExporting === 'docx' ? 'cursor-not-allowed opacity-50' : ''}
                         `}
-                        title="Export to DOCX"
+                        title="Export as Word"
                     >
-                        <DocumentArrowDownIcon className={`w-4 h-4 ${isExporting === 'docx' ? 'animate-pulse' : ''}`} />
-                        {isExporting === 'docx' && <span className="absolute -bottom-6 left-1/2 -translate-x-1/2 text-[8px] font-bold text-zinc-500">DOCX...</span>}
+                        <DocumentArrowDownIcon className={`w-4.5 h-4.5 ${isExporting === 'docx' ? 'animate-pulse' : ''}`} />
                     </button>
                     
                     <button 
                         onClick={() => setIsFullScreen(!isFullScreen)} 
-                        className="p-2 text-zinc-500 hover:text-white bg-zinc-900/50 border border-zinc-800 rounded-xl hover:bg-zinc-800 transition-all"
+                        className="p-2 text-zinc-500 hover:text-white bg-zinc-900/50 border border-zinc-800 rounded-xl hover:bg-zinc-800 transition-all shadow-sm"
                         title="Toggle Focus Mode"
                     >
-                        {isFullScreen ? <ArrowsPointingInIcon className="w-4 h-4" /> : <ArrowsPointingOutIcon className="w-4 h-4" />}
+                        {isFullScreen ? <ArrowsPointingInIcon className="w-4.5 h-4.5" /> : <ArrowsPointingOutIcon className="w-4.5 h-4.5" />}
                     </button>
                 </div>
             </div>
         )}
       </div>
 
-      <div className="flex-1 relative bg-[#09090b] w-full overflow-hidden">
+      {/* Preview Stage */}
+      <div className="flex-1 relative bg-[#050507] w-full overflow-hidden flex flex-col items-center">
         {isLoading && (
-            <div className="absolute inset-0 z-50 bg-[#09090b]/60 backdrop-blur-2xl flex items-center justify-center animate-in fade-in duration-700">
-                <div className="max-w-sm w-full p-1 border border-zinc-800 rounded-[2.5rem] bg-zinc-900/50 shadow-2xl">
-                    <div className="px-8 py-10 rounded-[2.3rem] bg-black/40 border border-zinc-800 flex flex-col items-center text-center">
+            <div className="absolute inset-0 z-50 bg-[#050507]/80 backdrop-blur-3xl flex items-center justify-center animate-in fade-in duration-500">
+                <div className="max-w-md w-full p-1 border border-zinc-800/50 rounded-[3rem] bg-zinc-900/20 shadow-2xl">
+                    <div className="px-10 py-12 rounded-[2.8rem] bg-black/60 border border-zinc-800 flex flex-col items-center text-center shadow-inner">
                         
-                        {/* Core Animation */}
-                        <div className="relative mb-12">
-                            <div className="w-24 h-24 rounded-full bg-blue-500/5 flex items-center justify-center border border-blue-500/10 shadow-[0_0_60px_rgba(59,130,246,0.15)]">
-                                <SparklesIcon className="w-10 h-10 text-blue-400 animate-pulse" />
+                        <div className="relative mb-14">
+                            <div className="w-28 h-28 rounded-full bg-blue-500/10 flex items-center justify-center border border-blue-500/20 shadow-[0_0_80px_rgba(59,130,246,0.2)]">
+                                <SparklesIcon className="w-12 h-12 text-blue-400 animate-pulse" />
                             </div>
-                            <div className="absolute -inset-6 animate-[spin_10s_linear_infinite] opacity-40">
-                                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-2.5 h-2.5 bg-blue-500 rounded-full shadow-[0_0_20px_rgba(59,130,246,1)]"></div>
+                            <div className="absolute -inset-8 animate-[spin_12s_linear_infinite] opacity-60">
+                                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-3 h-3 bg-blue-500 rounded-full shadow-[0_0_20px_rgba(59,130,246,1)]"></div>
                             </div>
-                            <div className="absolute -inset-4 animate-[spin_6s_linear_infinite_reverse] opacity-20">
-                                <div className="absolute bottom-0 right-1/4 w-2 h-2 bg-purple-500 rounded-full"></div>
+                            <div className="absolute -inset-6 animate-[spin_8s_linear_infinite_reverse] opacity-30">
+                                <div className="absolute bottom-0 right-1/4 w-2 h-2 bg-indigo-500 rounded-full"></div>
                             </div>
                         </div>
 
-                        <div className="w-full space-y-8">
-                            <div className="space-y-2">
-                                <h3 className="text-xl font-black text-white tracking-tighter">Manifesting Article</h3>
-                                <p className="text-blue-400 text-[10px] font-black uppercase tracking-[0.3em]">{loadingMessage || 'Calibrating...'}</p>
+                        <div className="w-full space-y-10">
+                            <div className="space-y-3">
+                                <h3 className="text-2xl font-black text-white tracking-tighter">Manifesting Article</h3>
+                                <p className="text-blue-500/80 text-[10px] font-black uppercase tracking-[0.4em]">{loadingMessage || 'Interpreting Signal...'}</p>
                             </div>
 
-                            {/* Checklist */}
-                            <div className="space-y-3 text-left">
+                            <div className="space-y-4 text-left max-w-[260px] mx-auto">
                                 {phases.map((phase, idx) => {
                                     const isComplete = idx < currentPhaseIndex;
                                     const isActive = idx === currentPhaseIndex;
                                     return (
-                                        <div key={phase.id} className={`flex items-center gap-3 transition-all duration-500 ${isComplete ? 'opacity-100 translate-x-0' : (isActive ? 'opacity-100 translate-x-1' : 'opacity-20')}`}>
-                                            <div className="flex items-center justify-center w-5 h-5 shrink-0">
+                                        <div key={phase.id} className={`flex items-center gap-4 transition-all duration-700 ${isComplete ? 'opacity-100 translate-x-0' : (isActive ? 'opacity-100 translate-x-1' : 'opacity-10')}`}>
+                                            <div className="flex items-center justify-center w-6 h-6 shrink-0">
                                                 {isComplete ? (
-                                                    <CheckCircleIcon className="w-5 h-5 text-emerald-500" />
+                                                    <CheckCircleIcon className="w-6 h-6 text-emerald-500" />
                                                 ) : isActive ? (
                                                     <div className="relative flex items-center justify-center">
-                                                      <div className="absolute inset-0 bg-blue-500/20 rounded-full animate-ping"></div>
-                                                      <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                                                      <div className="absolute inset-0 bg-blue-500/30 rounded-full animate-ping"></div>
+                                                      <div className="w-2.5 h-2.5 bg-blue-500 rounded-full"></div>
                                                     </div>
                                                 ) : (
-                                                    <div className="w-1.5 h-1.5 bg-zinc-700 rounded-full"></div>
+                                                    <div className="w-2 h-2 bg-zinc-800 rounded-full"></div>
                                                 )}
                                             </div>
-                                            <span className={`text-[11px] font-bold tracking-tight ${isComplete ? 'text-zinc-500 line-through' : (isActive ? 'text-white' : 'text-zinc-700')}`}>
+                                            <span className={`text-[12px] font-bold tracking-tight ${isComplete ? 'text-zinc-600 line-through' : (isActive ? 'text-zinc-100' : 'text-zinc-800')}`}>
                                                 {phase.label}
                                             </span>
                                         </div>
@@ -367,16 +367,15 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
                                 })}
                             </div>
 
-                            {/* Progress bar */}
-                            <div className="pt-2">
-                                <div className="flex items-center justify-between mb-2">
-                                    <span className="text-[9px] font-black text-zinc-600 uppercase tracking-widest">Entropy Level</span>
-                                    <span className="text-[10px] text-zinc-400 font-mono">{(streamSize/1000).toFixed(1)}k</span>
+                            <div className="pt-4 px-4">
+                                <div className="flex items-center justify-between mb-3 px-1">
+                                    <span className="text-[9px] font-black text-zinc-600 uppercase tracking-widest">Entropy Compression</span>
+                                    <span className="text-[10px] text-zinc-400 font-mono tracking-tighter">{(streamSize/1024).toFixed(1)}KB</span>
                                 </div>
-                                <div className="w-full h-1 bg-zinc-900 rounded-full overflow-hidden">
+                                <div className="w-full h-1.5 bg-zinc-950 rounded-full overflow-hidden border border-zinc-800/50">
                                     <div 
-                                        className="h-full bg-gradient-to-r from-blue-600 to-purple-600 transition-all duration-500 ease-out shadow-[0_0_10px_rgba(37,99,235,0.4)]" 
-                                        style={{ width: `${Math.min(100, (streamSize / 6000) * 100)}%` }}
+                                        className="h-full bg-gradient-to-r from-blue-600 via-indigo-500 to-blue-400 transition-all duration-700 ease-out shadow-[0_0_15px_rgba(37,99,235,0.5)]" 
+                                        style={{ width: `${Math.min(100, (streamSize / 8192) * 100)}%` }}
                                     ></div>
                                 </div>
                             </div>
@@ -386,38 +385,53 @@ export const LivePreview: React.FC<LivePreviewProps> = ({ creation, isLoading, l
             </div>
         )}
         
-        <div className="w-full h-full bg-white relative">
-          {processedHtml ? (
-              <iframe 
-                ref={iframeRef} 
-                title="Preview" 
-                srcDoc={processedHtml} 
-                className={`w-full h-full border-none transition-opacity duration-500 ${isLoading ? 'opacity-30 pointer-events-none' : 'opacity-100'}`} 
-                sandbox="allow-scripts allow-forms allow-popups allow-modals allow-same-origin" 
-              />
-          ) : creation?.originalImage ? (
-              creation.originalImage.startsWith('data:application/pdf') ? (
-                  <PdfRenderer dataUrl={creation.originalImage} />
-              ) : (
-                  <div className="w-full h-full bg-zinc-900 flex items-center justify-center p-12 transition-all duration-700">
-                    <div className="relative group max-w-2xl">
-                      <img src={creation.originalImage} alt="Reference" className="max-w-full max-h-[80vh] object-contain rounded-2xl shadow-2xl opacity-40 group-hover:opacity-60 transition-opacity" />
-                      <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                        <div className="bg-black/60 backdrop-blur-md px-4 py-2 rounded-full text-xs font-bold text-white border border-white/10">Reference Context</div>
-                      </div>
+        {/* Document Content */}
+        <div className={`flex-1 w-full overflow-y-auto overflow-x-hidden p-6 md:p-12 transition-all duration-700 ${processedHtml ? 'bg-[#121214]' : 'bg-[#050507]'}`}>
+          <div className={`mx-auto max-w-[840px] w-full min-h-full transition-all duration-1000 ${processedHtml ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
+            {processedHtml ? (
+                <div className="relative bg-white shadow-[0_30px_100px_rgba(0,0,0,0.5)] rounded-sm overflow-hidden min-h-[1100px]">
+                    <iframe 
+                      ref={iframeRef} 
+                      title="Preview" 
+                      srcDoc={processedHtml} 
+                      className={`w-full h-full border-none transition-opacity duration-1000 min-h-[1100px] ${isLoading ? 'opacity-20 pointer-events-none' : 'opacity-100'}`} 
+                      sandbox="allow-scripts allow-forms allow-popups allow-modals allow-same-origin" 
+                    />
+                </div>
+            ) : creation?.originalImage ? (
+                creation.originalImage.startsWith('data:application/pdf') ? (
+                    <div className="rounded-xl overflow-hidden shadow-2xl border border-zinc-800">
+                        <PdfRenderer dataUrl={creation.originalImage} />
                     </div>
-                  </div>
-              )
-          ) : (
-              <div className="w-full h-full flex flex-col items-center justify-center bg-[#09090b] text-zinc-500 transition-all duration-1000 animate-in fade-in">
-                  <div className="relative mb-6">
-                    <SparklesIcon className="w-14 h-14 opacity-10 animate-pulse" />
-                    <div className="absolute inset-0 bg-blue-500/10 blur-[60px] rounded-full"></div>
-                  </div>
-                  <p className="text-[10px] font-black tracking-[0.3em] uppercase opacity-20">Awaiting Signal</p>
-                  <p className="text-[11px] font-medium text-zinc-700 mt-2 max-w-[200px] text-center">Upload a file or provide a prompt to generate documentation</p>
-              </div>
-          )}
+                ) : (
+                    <div className="w-full h-full flex items-center justify-center p-8 bg-zinc-900/30 rounded-2xl border border-zinc-800/50">
+                        <div className="relative group max-w-2xl animate-in zoom-in-95 duration-700">
+                            <img src={creation.originalImage} alt="Reference Context" className="max-w-full max-h-[75vh] object-contain rounded-xl shadow-[0_20px_60px_rgba(0,0,0,0.6)] border border-white/5 opacity-50 group-hover:opacity-80 transition-opacity" />
+                            <div className="absolute inset-0 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                                <div className="bg-black/80 backdrop-blur-xl px-5 py-2.5 rounded-full text-[10px] font-black uppercase tracking-[0.2em] text-white border border-white/10 shadow-2xl">
+                                    Base Visual Context
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )
+            ) : (
+                <div className="flex flex-col items-center justify-center min-h-[60vh] text-zinc-700 space-y-8 animate-in fade-in duration-1000">
+                    <div className="relative">
+                        <div className="p-6 bg-zinc-900/40 rounded-[2rem] border border-zinc-800/50 shadow-inner">
+                            <SparklesIcon className="w-16 h-16 opacity-10 animate-pulse text-blue-500" />
+                        </div>
+                        <div className="absolute -inset-10 bg-blue-500/5 blur-3xl rounded-full"></div>
+                    </div>
+                    <div className="text-center space-y-2">
+                        <p className="text-[10px] font-black tracking-[0.4em] uppercase opacity-30">Awaiting Signal</p>
+                        <p className="text-[12px] font-medium text-zinc-600 max-w-[240px] leading-relaxed">
+                            Upload high-fidelity technical specs or captured UI to manifest professional documentation
+                        </p>
+                    </div>
+                </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
