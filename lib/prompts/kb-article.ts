@@ -4,80 +4,87 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-const RESPONSE_FORMAT = `
----
-**CRITICAL OUTPUT RULES:**
-1.  **Output ONLY HTML**: Do not output markdown ("\`\`\`"), introductory text, or explanations. Start directly with \`<!DOCTYPE html>\`.
-2.  **Full Document**: You must regenerate the **ENTIRE** HTML document, including \`<html>\`, \`<body>\`, and all content.
-3.  **Preserve Structure**: Maintain the semantic tags (\`<h1>\`, \`<h2>\`, \`<ul>\`) and specific classes defined in the template.
-4.  **Technical Graphics**: If generating a flowchart or diagram, use inline **SVG** within a \`<div class="ai-diagram">\`. Style shapes (Rectangles for steps, Diamonds for decisions) with solid background colors and clear black text. Avoid using transparency to ensure clean DOCX exports.
+// --- 1. MODE CONSTRAINT (The Container) ---
+// Enforces the "Textual Metafunction". 
+// It prevents the model from being "chatty" or using Markdown.
+const HTML_MODE_CONSTRAINT = `
+### MODE CONSTRAINT (STRICT ENFORCEMENT)
+1.  **Format**: RAW HTML output only.
+    -   FORBIDDEN: Markdown code blocks (\`\`\`), preambles ("Here is your code"), or postscripts.
+    -   REQUIRED: Start immediately with \`<!DOCTYPE html>\`.
+2.  **Structure**:
+    -   Use semantic tags: \`<section>\`, \`<article>\`, \`<header>\`.
+    -   Use \`<div class="ai-diagram">\` for any process flows.
 `;
 
-export const KB_TROUBLESHOOTING_SYSTEM_INSTRUCTION = `You are an expert Technical Writer and AI Engineer operating a "Notes + Screenshots -> KB Article" pipeline.
+// --- 2. TENOR CONSTRAINT (The Stance) ---
+// Enforces the "Interpersonal Metafunction".
+// It prevents the model from being "subservient" or "weak".
+const TENOR_CONSTRAINT_STRICT = `
+### TENOR CONSTRAINT (STRICT ENFORCEMENT)
+1.  **Mood**: IMPERATIVE ONLY.
+    -   VIOLATION: "You should click the save button." (Advice)
+    -   COMPLIANT: "Click the save button." (Command)
+2.  **Modality**: HIGH (Absolute Certainty).
+    -   BANNED VOCABULARY: "maybe", "try to", "might", "possibly", "jiggle", "wiggle".
+    -   REQUIRED VOCABULARY: "ensure", "verify", "must", "execute".
+3.  **Social Distance**: MAXIMUM.
+    -   No pleasantries ("I hope this helps").
+    -   No user-centric themes ("You need to...").
+    -   Focus on the Object/System ("The system must be...").
+`;
 
-YOUR GOAL:
-Analyze the input and transform it into a STRICTLY FORMATTED Standard KB Article in HTML following the **"Triage-First" Linear Flow**.
+// --- 3. FIELD CONSTRAINTS (The Logic) ---
+// Enforces the "Ideational Metafunction" per Genre.
 
-**CRITICAL: VISUAL ELEMENTS**
--   **SCREENSHOTS**: Use \`<img src="ID_FROM_SYSTEM_PROMPT" alt="Descriptive text">\` for provided screenshots.
--   **DIAGRAMS**: When a logical process or decision tree is complex, generate a **Flowchart as an inline SVG** (wrapped in \`<div class="ai-diagram">\`). Insert it immediately after the textual explanation of the process.
+// GENRE: Troubleshooting (Triage)
+const FIELD_TROUBLESHOOTING = `
+### FIELD CONSTRAINT: TRIAGE GENRE
+1.  **Process Types**: 
+    -   **Relational**: For Symptoms ("The light IS orange").
+    -   **Material**: For Fixes ("PRESS the switch").
+    -   *BANNED*: Mental Processes ("I think it's broken", "Emphasize squeezing").
+2.  **Schema**:
+    -   <h1>: Issue Summary (Noun Phrase)
+    -   <section class="symptom">: The observed failure state.
+    -   <section class="diagnosis">: The root cause (Relational).
+    -   <section class="remediation">: Step-by-step fix (Material).
+`;
 
----
+// GENRE: How-To (Procedural)
+const FIELD_PROCEDURAL = `
+### FIELD CONSTRAINT: PROCEDURAL GENRE
+1.  **Process Types**: STRICTLY Material Processes (Actions).
+2.  **Chronology**: Linear sequence.
+3.  **Visuals**: Complex actions must include an <img src="placeholder"> tag.
+`;
 
-### **TEMPLATE SPECIFICATION**
+// --- EXPORTED INSTRUCTIONS ---
 
-1.  **Document Title (H1)**
-2.  **Metadata Header**: \`<p class="metadata">\` "KB[Number] | v[Version]"
-3.  **Major Phases (H2)**: "Introduction", "Troubleshooting Guide".
-4.  **Sequential Steps (H3)**: "Step 1: Check Connection".
-5.  **Task Details (H4)**: Specific sub-actions.
-6.  **Action Lists**: Bulleted lists with **UI Elements** in bold.
+export const KB_TROUBLESHOOTING_SYSTEM_INSTRUCTION = `
+${HTML_MODE_CONSTRAINT}
+${TENOR_CONSTRAINT_STRICT}
+${FIELD_TROUBLESHOOTING}
+`;
 
-**Placement**:
-Graphics (IMG/SVG) must be placed directly after the instructional text they illustrate.
-` + RESPONSE_FORMAT;
+export const KB_HOW_TO_SYSTEM_INSTRUCTION = `
+${HTML_MODE_CONSTRAINT}
+${TENOR_CONSTRAINT_STRICT}
+${FIELD_PROCEDURAL}
+`;
 
-export const KB_HOW_TO_SYSTEM_INSTRUCTION = `You are an expert Technical Writer transforming inputs into a "How-To" KB Article.
+// Default / Fallback
+export const GENERIC_SYSTEM_INSTRUCTION = KB_TROUBLESHOOTING_SYSTEM_INSTRUCTION;
 
-YOUR GOAL:
-Create a clear, step-by-step procedure. Use standard visual aids (Screenshots via provided IDs, or SVG diagrams for logic/system flows).
-
-### **TEMPLATE SPECIFICATION**
-
-1.  **Title (H1)**: "How to..."
-2.  **Metadata**: \`<p class="metadata">\`
-3.  **Overview (H2)**
-4.  **Prerequisites (H2)**
-5.  **Procedure (H2)**: Use numbered lists. Insert SVG diagrams to clarify branching paths or system architectures.
-6.  **Verification (H2)**: Success confirmation steps.
-` + RESPONSE_FORMAT;
-
-export const KB_FAQ_SYSTEM_INSTRUCTION = `You are an expert Technical Writer transforming inputs into an FAQ document.
-
-### **TEMPLATE SPECIFICATION**
-
-1.  **Title (H1)**: "FAQ - [Topic]"
-2.  **Metadata**
-3.  **Introduction (H2)**
-4.  **Common Questions (H2)**: Use H3 for the Question.
-5.  **Graphics**: Use SVG diagrams within an answer if explaining a complex process or system relationship.
-` + RESPONSE_FORMAT;
-
-export const GENERIC_SYSTEM_INSTRUCTION = `You are an expert AI Engineer specializing in bringing artifacts to life. Generate fully functional, single-page HTML applications. 
-
-RESPONSE FORMAT:
-Return ONLY the raw HTML code. Do not wrap in markdown blocks.`;
-
+/**
+ * The Selector Logic for SFL-based prompts
+ */
 export const getSystemInstruction = (type: string, contextString: string = ""): string => {
-    switch (type) {
-        case 'troubleshooting': return KB_TROUBLESHOOTING_SYSTEM_INSTRUCTION;
-        case 'howto': return KB_HOW_TO_SYSTEM_INSTRUCTION;
-        case 'faq': return KB_FAQ_SYSTEM_INSTRUCTION;
-        case 'sop': return KB_HOW_TO_SYSTEM_INSTRUCTION;
-        default:
-            const lower = contextString.toLowerCase();
-            if (lower.includes('faq')) return KB_FAQ_SYSTEM_INSTRUCTION;
-            if (lower.includes('how to') || lower.includes('guide')) return KB_HOW_TO_SYSTEM_INSTRUCTION;
-            return KB_TROUBLESHOOTING_SYSTEM_INSTRUCTION; 
-    }
+  switch (type.toLowerCase()) {
+    case 'troubleshooting': return KB_TROUBLESHOOTING_SYSTEM_INSTRUCTION;
+    case 'howto': return KB_HOW_TO_SYSTEM_INSTRUCTION;
+    case 'faq': return KB_HOW_TO_SYSTEM_INSTRUCTION; 
+    case 'sop': return KB_HOW_TO_SYSTEM_INSTRUCTION;
+    default: return GENERIC_SYSTEM_INSTRUCTION;
+  }
 };

@@ -3,11 +3,10 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-import React, { useEffect, useState, useRef, useMemo } from 'react';
+import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { 
     PencilIcon, 
     CheckIcon, 
-    PaintBrushIcon, 
     ArrowsPointingOutIcon, 
     ArrowsPointingInIcon, 
     SparklesIcon, 
@@ -15,7 +14,8 @@ import {
     DocumentArrowDownIcon,
     DocumentIcon,
     ShieldCheckIcon,
-    ArrowPathIcon
+    ArrowPathIcon,
+    EyeIcon
 } from '@heroicons/react/24/outline';
 import { Creation } from './CreationHistory';
 import { DocxGenerator } from '../lib/services/DocxGenerator';
@@ -146,6 +146,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
     const prevIsLoadingRef = useRef(isLoading);
     const iframeRef = useRef<HTMLIFrameElement>(null);
     const lastRenderedId = useRef<string | null>(null);
+    const syncTimeoutRef = useRef<any>(null);
 
     useEffect(() => {
         if (isLoading && !prevIsLoadingRef.current) stopGenerationSoundRef.current = playGeneratingSound();
@@ -168,26 +169,28 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
 
         const runtimeScript = `
             <script>
+                // Notify parent on any content change if editable
+                const observer = new MutationObserver(() => {
+                    if (document.body.contentEditable === 'true') {
+                        window.parent.postMessage({ type: 'CONTENT_CHANGED' }, '*');
+                    }
+                });
+                observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+
                 window.addEventListener('message', (event) => {
                     const { type, selector, html } = event.data;
                     if (type === 'UPDATE_ELEMENT' || type === 'APPEND_ELEMENT') {
                         const target = document.querySelector(selector);
                         if (target) {
-                            // Phase 1: Pre-update highlight
                             target.style.transition = 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)';
                             target.style.outline = '3px solid rgba(59, 130, 246, 0.5)';
                             target.style.outlineOffset = '4px';
                             target.style.backgroundColor = 'rgba(59, 130, 246, 0.05)';
                             
                             setTimeout(() => {
-                                // Phase 2: Apply Content
-                                if (type === 'UPDATE_ELEMENT') {
-                                    target.innerHTML = html;
-                                } else {
-                                    target.insertAdjacentHTML('beforeend', html);
-                                }
+                                if (type === 'UPDATE_ELEMENT') target.innerHTML = html;
+                                else target.insertAdjacentHTML('beforeend', html);
                                 
-                                // Phase 3: Post-update glow
                                 target.style.outline = 'none';
                                 target.classList.add('kb-updated-node');
                                 setTimeout(() => {
@@ -232,30 +235,25 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
             th { text-align: left; background: #f9fafb; padding: 18px 24px; border-bottom: 2px solid #f1f5f9; color: #111827; font-weight: 700; }
             td { padding: 18px 24px; border-bottom: 1px solid #f1f5f9; }
             
-            [contenteditable="true"]:focus { outline: none; box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.15); border-radius: 4px; }
+            [contenteditable="true"]:focus { outline: none; box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1); }
             
             @keyframes glowPulse {
                 0% { background-color: rgba(59, 130, 246, 0.0); }
-                15% { background-color: rgba(59, 130, 246, 0.15); box-shadow: 0 0 30px rgba(59, 130, 246, 0.2); }
+                15% { background-color: rgba(59, 130, 246, 0.1); }
                 100% { background-color: rgba(59, 130, 246, 0.0); }
             }
-            .kb-updated-node { animation: glowPulse 3.5s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+            .kb-updated-node { animation: glowPulse 3.5s forwards; }
             @keyframes reveal { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
             body > * { animation: reveal 0.8s cubic-bezier(0.16, 1, 0.3, 1) both; }
         </style>`;
 
         let final = html;
-        if (final.includes('</body>')) {
-            final = final.replace('</body>', `${runtimeScript}${styleTag}</body>`);
-        } else {
-            final = final + runtimeScript + styleTag;
-        }
+        if (final.includes('</body>')) final = final.replace('</body>', `${runtimeScript}${styleTag}</body>`);
+        else final = final + runtimeScript + styleTag;
         return final;
     }, [creation?.html, imageMap]);
 
-    // INCREMENTAL UPDATE LOGIC: 
-    // Only update srcDoc if the ID has changed (switching documents).
-    // This prevents the iframe from flickering when model makes atomic updates.
+    // Update srcDoc ONLY when switching documents to avoid reloads during atomic/live edits
     useEffect(() => {
         if (!creation) return;
         if (creation.id !== lastRenderedId.current) {
@@ -264,16 +262,26 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
         }
     }, [creation?.id, processedHtml]);
 
+    const performSync = useCallback(() => {
+        if (!iframeRef.current?.contentDocument || !creation || !onUpdateArtifact) return;
+        const newHtml = iframeRef.current.contentDocument.documentElement.outerHTML;
+        onUpdateArtifact(creation.id, newHtml, true);
+    }, [creation, onUpdateArtifact]);
+
     useEffect(() => {
         const handleMessage = (event: MessageEvent) => {
             if (event.data?.type === 'UPDATE_ELEMENT' || event.data?.type === 'APPEND_ELEMENT') {
                 setIsSyncing(true);
                 setTimeout(() => setIsSyncing(false), 2500);
+            } else if (event.data?.type === 'CONTENT_CHANGED') {
+                // Debounced sync back to parent state
+                if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
+                syncTimeoutRef.current = setTimeout(performSync, 2000);
             }
         };
         window.addEventListener('message', handleMessage);
         return () => window.removeEventListener('message', handleMessage);
-    }, []);
+    }, [performSync]);
 
     useEffect(() => {
         const iframe = iframeRef.current;
@@ -282,25 +290,11 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
              try {
                  const doc = iframe.contentDocument;
                  if (!doc) return;
-                 const isActuallyEditable = (isEditing && !isLive);
-                 doc.body.contentEditable = isActuallyEditable ? "true" : "false";
+                 doc.body.contentEditable = isEditing ? "true" : "false";
              } catch (e) {}
         };
         toggleEdit(); iframe.onload = toggleEdit;
-    }, [isEditing, isLive]);
-
-    const handleSaveEdit = () => {
-        if (!iframeRef.current?.contentDocument) return;
-        const doc = iframeRef.current.contentDocument;
-        doc.querySelectorAll('[contenteditable]').forEach(el => el.removeAttribute('contenteditable'));
-        let newHtml = doc.documentElement.outerHTML;
-        if (creation && onUpdateArtifact) {
-            onUpdateArtifact(creation.id, newHtml, true);
-            // Since this was a manual edit, we DO want to force a refresh to ensure state is clean
-            setInternalSrcDoc(processedHtml);
-        }
-        setIsEditing(false);
-    };
+    }, [isEditing]);
 
     const handleExportDocx = async () => {
         if (!creation || !processedHtml) return;
@@ -350,9 +344,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
                 <span className="text-[9px] font-black text-zinc-600 uppercase tracking-[0.3em] leading-none mb-1">
                     {isLoading ? 'Synthesizing' : 'Artifact Preview'}
                 </span>
-                {creation && (
-                    <span className="text-[11px] font-bold text-zinc-100 truncate max-w-[220px]">{creation.name}</span>
-                )}
+                {creation && <span className="text-[11px] font-bold text-zinc-100 truncate max-w-[220px]">{creation.name}</span>}
             </div>
         </div>
         
@@ -365,28 +357,30 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
                     </div>
                 )}
 
-                {!isEditing ? (
-                    <div className="flex items-center p-1 bg-zinc-900/80 rounded-xl border border-zinc-800 shadow-sm mr-2">
-                        <button 
-                            onClick={() => setIsEditing(true)} 
-                            className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-black uppercase text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-all"
-                        >
-                            <PencilIcon className="w-3.5 h-3.5" /> Edit
-                        </button>
-                        <button 
-                            onClick={onStandardize} 
-                            className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-black uppercase text-zinc-400 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition-all"
-                            title="Format for ServiceNow Template"
-                        >
-                            <ShieldCheckIcon className="w-3.5 h-3.5" /> Compliance
-                        </button>
-                    </div>
-                ) : (
-                    <div className="flex items-center gap-2 mr-2">
-                        <button onClick={handleSaveEdit} className="flex items-center gap-1.5 px-4 py-1.5 text-[10px] font-black uppercase text-emerald-950 bg-emerald-400 hover:bg-emerald-300 rounded-lg transition-all shadow-[0_0_20px_rgba(52,211,153,0.3)]"><CheckIcon className="w-3.5 h-3.5" /> Save Changes</button>
-                        <button onClick={() => setIsEditing(false)} className="px-3 py-1.5 text-[10px] font-bold text-zinc-500 hover:text-zinc-300 transition-colors">Discard</button>
-                    </div>
-                )}
+                <div className="flex items-center p-1 bg-zinc-900/80 rounded-xl border border-zinc-800 shadow-sm mr-2">
+                    <button 
+                        onClick={() => setIsEditing(true)} 
+                        className={`flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-black uppercase rounded-lg transition-all ${isEditing ? 'bg-blue-600 text-white' : 'text-zinc-400 hover:text-white hover:bg-zinc-800'}`}
+                        title="Direct Edit Mode"
+                    >
+                        <PencilIcon className="w-3.5 h-3.5" /> Live Edit
+                    </button>
+                    <button 
+                        onClick={() => { setIsEditing(false); performSync(); }} 
+                        className={`flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-black uppercase rounded-lg transition-all ${!isEditing ? 'bg-zinc-700 text-white' : 'text-zinc-400 hover:text-white hover:bg-zinc-800'}`}
+                        title="View Mode"
+                    >
+                        <EyeIcon className="w-3.5 h-3.5" /> View
+                    </button>
+                    <div className="w-px h-4 bg-zinc-800 mx-1"></div>
+                    <button 
+                        onClick={onStandardize} 
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-black uppercase text-zinc-400 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition-all"
+                        title="Format for ServiceNow Template"
+                    >
+                        <ShieldCheckIcon className="w-3.5 h-3.5" /> Compliance
+                    </button>
+                </div>
                 
                 <div className="w-px h-6 bg-zinc-800 mx-2"></div>
                 
@@ -453,7 +447,7 @@ export const LivePreview: React.FC<LivePreviewProps> = ({
         {isEditing && (
             <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[101] flex items-center gap-3 px-6 py-2 bg-blue-600 text-white rounded-full shadow-2xl animate-in slide-in-from-top-4">
                 <PencilIcon className="w-4 h-4 animate-bounce" />
-                <span className="text-xs font-black uppercase tracking-widest">Direct Edit Mode Active</span>
+                <span className="text-xs font-black uppercase tracking-widest">Live Edit Mode Active</span>
             </div>
         )}
         

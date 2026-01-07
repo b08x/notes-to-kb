@@ -56,12 +56,12 @@ export class DocxGenerator {
             quickFormat: true,
             run: {
               font: "Arial",
-              size: 48, // 24pt
+              size: 56, // 28pt to match h1 3.5rem
               bold: true,
               color: "111827",
             },
             paragraph: {
-              spacing: { after: 400 }, 
+              spacing: { before: 0, after: 600 }, 
               alignment: AlignmentType.LEFT,
             },
           },
@@ -75,12 +75,13 @@ export class DocxGenerator {
               font: "Arial",
               size: 32, // 16pt
               bold: true,
-              color: "1F2937",
+              color: "111827",
             },
             paragraph: {
-              spacing: { before: 400, after: 200 },
+              spacing: { before: 800, after: 400 },
+              alignment: AlignmentType.LEFT,
               border: {
-                bottom: { color: "E5E7EB", space: 1, style: BorderStyle.SINGLE, size: 6 },
+                left: { color: "3B82F6", space: 12, style: BorderStyle.SINGLE, size: 36 },
               },
             },
           },
@@ -97,7 +98,8 @@ export class DocxGenerator {
               color: "1F2937",
             },
             paragraph: {
-              spacing: { before: 300, after: 150 },
+              spacing: { before: 600, after: 300 },
+              alignment: AlignmentType.LEFT,
             },
           },
           {
@@ -106,11 +108,11 @@ export class DocxGenerator {
             quickFormat: true,
             run: {
               font: "Arial",
-              size: 21, // ~10.5pt
+              size: 22, // 11pt
               color: "374151",
             },
             paragraph: {
-              spacing: { line: 276, before: 0, after: 160 }, // 1.15 line spacing
+              spacing: { line: 360, before: 0, after: 240 }, // 1.5 line spacing for readability
               alignment: AlignmentType.LEFT,
             },
           },
@@ -121,13 +123,14 @@ export class DocxGenerator {
             quickFormat: true,
             run: {
               font: "Courier New",
-              size: 18, // 9pt
+              size: 18, 
               color: "111827",
             },
             paragraph: {
-              spacing: { before: 120, after: 120 },
+              spacing: { before: 200, after: 200 },
               shading: { fill: "F3F4F6" },
-              indent: { left: 240 },
+              indent: { left: 400 },
+              alignment: AlignmentType.LEFT,
               border: {
                 top: { style: BorderStyle.SINGLE, size: 1, color: "E5E7EB" },
                 bottom: { style: BorderStyle.SINGLE, size: 1, color: "E5E7EB" },
@@ -135,27 +138,21 @@ export class DocxGenerator {
                 right: { style: BorderStyle.SINGLE, size: 1, color: "E5E7EB" },
               }
             },
-          },
-          {
-             id: "Subtitle",
-             name: "Subtitle", // Used for .metadata class
-             basedOn: "Normal",
-             next: "Normal",
-             quickFormat: true,
-             run: {
-                 font: "Courier New",
-                 size: 18, 
-                 color: "6B7280"
-             },
-             paragraph: {
-                 spacing: { after: 300 }
-             }
           }
         ],
       },
       sections: [
         {
-          properties: {},
+          properties: {
+              page: {
+                  margin: {
+                      top: 1440, // 1 inch
+                      right: 1440,
+                      bottom: 1440,
+                      left: 1440,
+                  }
+              }
+          },
           children: children,
         },
       ],
@@ -171,20 +168,22 @@ export class DocxGenerator {
         return null;
     }
 
+    // Specialized handler for the Metadata block to preserve layout in Word
+    if (element.classList.contains('metadata')) {
+        return this.parseMetadata(element);
+    }
+
     switch (tagName) {
       case "h1":
         return new Paragraph({ text: element.textContent || "", style: "DocTitle" });
 
       case "h2":
-        return new Paragraph({ text: element.textContent || "", heading: HeadingLevel.HEADING_1 });
+        return new Paragraph({ text: element.textContent || "", style: "Heading1" });
 
       case "h3":
-        return new Paragraph({ text: element.textContent || "", heading: HeadingLevel.HEADING_2 });
+        return new Paragraph({ text: element.textContent || "", style: "Heading2" });
 
       case "p":
-        if (element.classList.contains('metadata')) {
-            return new Paragraph({ children: this.parseInline(element), style: "Subtitle" });
-        }
         return new Paragraph({ children: this.parseInline(element), style: "Normal" });
 
       case "ul":
@@ -197,25 +196,19 @@ export class DocxGenerator {
       case "img":
         return this.createImageRun(element as HTMLImageElement);
       
-      case "svg":
-        return this.createImageRunFromSvg(element as SVGSVGElement);
-      
       case "pre":
         return new Paragraph({ text: element.textContent || "", style: "CodeBlock" });
 
+      case "section":
+      case "article":
       case "div":
         const classes = Array.from(element.classList).map(c => c.toLowerCase());
         const isCallout = classes.some(c => 
-          ['note', 'warning', 'info', 'alert', 'callout', 'warning-box'].includes(c)
+          ['note', 'warning', 'info', 'alert', 'callout', 'warning-box', 'symptom', 'diagnosis', 'remediation'].includes(c)
         );
 
         if (isCallout) {
             return this.parseCallout(element);
-        }
-
-        if (classes.includes('ai-diagram') || classes.includes('flowchart')) {
-            const svg = element.querySelector('svg');
-            if (svg) return this.createImageRunFromSvg(svg);
         }
 
         // Recursive block parsing
@@ -229,7 +222,7 @@ export class DocxGenerator {
                 }
             } else if (childNode.nodeType === Node.TEXT_NODE && childNode.textContent?.trim()) {
                 subNodes.push(new Paragraph({
-                    children: [new TextRun({ text: childNode.textContent, font: "Arial", size: 21 })],
+                    children: [new TextRun({ text: childNode.textContent, font: "Arial", size: 22 })],
                     style: "Normal"
                 }));
             }
@@ -237,7 +230,6 @@ export class DocxGenerator {
         return subNodes.length > 0 ? subNodes : null;
 
       default:
-        // Attempt to render unknown block tags as basic paragraphs
         if (element.textContent?.trim()) {
              return new Paragraph({ children: this.parseInline(element), style: "Normal" });
         }
@@ -245,56 +237,86 @@ export class DocxGenerator {
     }
   }
 
+  /**
+   * Transforms a flex-based metadata paragraph into a Word table for alignment.
+   */
+  private parseMetadata(element: Element): Table {
+      const items = Array.from(element.querySelectorAll('span')).map(s => s.textContent || "");
+      const rows: TableRow[] = [];
+      
+      // We group metadata in pairs to create a compact 2-column grid in Word
+      for (let i = 0; i < items.length; i += 2) {
+          const cells = [
+              new TableCell({
+                  children: [new Paragraph({ 
+                      children: [new TextRun({ text: items[i], size: 18, color: "6B7280", font: "Courier New", bold: true })],
+                      spacing: { after: 100 }
+                  })],
+                  borders: { top: { style: BorderStyle.NIL }, bottom: { style: BorderStyle.NIL }, left: { style: BorderStyle.NIL }, right: { style: BorderStyle.NIL } }
+              })
+          ];
+          
+          if (items[i+1]) {
+              cells.push(new TableCell({
+                  children: [new Paragraph({ 
+                      children: [new TextRun({ text: items[i+1], size: 18, color: "6B7280", font: "Courier New", bold: true })],
+                      spacing: { after: 100 }
+                  })],
+                  borders: { top: { style: BorderStyle.NIL }, bottom: { style: BorderStyle.NIL }, left: { style: BorderStyle.NIL }, right: { style: BorderStyle.NIL } }
+              }));
+          }
+
+          rows.push(new TableRow({ children: cells }));
+      }
+
+      return new Table({
+          rows: rows,
+          width: { size: 100, type: WidthType.PERCENTAGE },
+          borders: {
+              top: { style: BorderStyle.NIL },
+              bottom: { style: BorderStyle.SINGLE, size: 1, color: "F3F4F6" },
+              left: { style: BorderStyle.NIL },
+              right: { style: BorderStyle.NIL },
+              insideHorizontal: { style: BorderStyle.NIL },
+              insideVertical: { style: BorderStyle.NIL },
+          },
+          columnWidths: [4500, 4500] // Roughly half and half
+      });
+  }
+
   private async parseCallout(element: Element): Promise<Table> {
     const children: FileChild[] = [];
-    let currentInlineRuns: (TextRun | ImageRun)[] = [];
-
-    const flushInlineRuns = () => {
-        if (currentInlineRuns.length > 0) {
-            children.push(new Paragraph({
-                children: [...currentInlineRuns],
-                style: "Normal",
-                spacing: { before: 0, after: 100 }
-            }));
-            currentInlineRuns.length = 0;
-        }
-    };
-
+    
+    // We handle the content of callouts specifically to maintain styling
     for (const node of Array.from(element.childNodes)) {
-        if (node.nodeType === Node.TEXT_NODE) {
-            const text = node.textContent;
-            if (text) {
-                currentInlineRuns.push(new TextRun({
-                    text: text,
-                    font: "Arial",
-                    size: 21
-                }));
-            }
-        } else if (node.nodeType === Node.ELEMENT_NODE) {
+        if (node.nodeType === Node.ELEMENT_NODE) {
             const el = node as Element;
-            const tagName = el.tagName.toLowerCase();
-
-            if (['strong', 'b', 'i', 'em', 'code', 'span', 'a', 'u', 's'].includes(tagName)) {
-                currentInlineRuns.push(...this.parseInline(el));
-            } else {
-                flushInlineRuns();
-                const parsed = await this.parseNode(el);
-                if (parsed) {
-                    if (Array.isArray(parsed)) children.push(...parsed);
-                    else children.push(parsed as any);
-                }
+            const parsed = await this.parseNode(el);
+            if (parsed) {
+                if (Array.isArray(parsed)) children.push(...parsed);
+                else children.push(parsed as any);
             }
+        } else if (node.nodeType === Node.TEXT_NODE && node.textContent?.trim()) {
+            children.push(new Paragraph({
+                children: [new TextRun({ text: node.textContent, size: 22 })],
+                style: "Normal",
+                spacing: { after: 120 }
+            }));
         }
     }
-    flushInlineRuns();
 
-    let borderColor = "3B82F6"; 
-    let bgColor = "F0F7FF"; 
+    if (children.length === 0) children.push(new Paragraph(""));
+
+    let borderColor = "3B82F6"; // Default Blue
+    let bgColor = "F9FAFB"; // Soft Gray
     
     const lowerClasses = Array.from(element.classList).map(c => c.toLowerCase());
     if (lowerClasses.includes('warning') || lowerClasses.includes('alert') || lowerClasses.includes('warning-box')) {
         borderColor = "EF4444"; 
         bgColor = "FEF2F2"; 
+    } else if (lowerClasses.includes('note') || lowerClasses.includes('info')) {
+        borderColor = "3B82F6";
+        bgColor = "F0F7FF";
     }
 
     return new Table({
@@ -302,22 +324,22 @@ export class DocxGenerator {
             new TableRow({
                 children: [
                     new TableCell({
-                        children: (children.length > 0 ? children : [new Paragraph("")]) as any,
+                        children: children as any,
                         shading: { fill: bgColor },
                         borders: {
-                            left: { style: BorderStyle.SINGLE, size: 30, color: borderColor },
+                            left: { style: BorderStyle.SINGLE, size: 36, color: borderColor },
                             top: { style: BorderStyle.NIL },
                             right: { style: BorderStyle.NIL },
                             bottom: { style: BorderStyle.NIL },
                         },
-                        margins: { top: 200, bottom: 200, left: 300, right: 300 },
-                        verticalAlign: VerticalAlign.CENTER,
+                        margins: { top: 300, bottom: 300, left: 400, right: 300 },
+                        verticalAlign: VerticalAlign.TOP,
                     }),
                 ],
             }),
         ],
         width: { size: 100, type: WidthType.PERCENTAGE },
-        spacing: { before: 300, after: 300 }
+        spacing: { before: 400, after: 400 }
     });
   }
 
@@ -344,11 +366,11 @@ export class DocxGenerator {
         });
 
         items.push(new Paragraph({
-          children: this.parseInline(inlineContent, { font: "Arial", size: 21 }, true),
+          children: this.parseInline(inlineContent, { font: "Arial", size: 22 }, true),
           bullet: !isOrdered ? { level } : undefined,
           numbering: isOrdered ? { reference: "decimal-numbering", level } : undefined,
           style: "Normal",
-          indent: { left: 720 * (level + 1) }
+          indent: { left: 720 * (level + 1), hanging: 360 }
         }));
 
         nestedLists.forEach(nested => {
@@ -375,14 +397,14 @@ export class DocxGenerator {
                     spacing: { after: 0 }
                 })],
                 verticalAlign: VerticalAlign.CENTER,
-                shading: htmlRow.parentElement?.tagName.toLowerCase() === 'thead' ? { fill: "F3F4F6", type: "solid", color: "F3F4F6" } : undefined,
+                shading: htmlRow.parentElement?.tagName.toLowerCase() === 'thead' ? { fill: "F3F4F6" } : undefined,
                 borders: {
                     top: { style: BorderStyle.SINGLE, size: 1, color: "E5E7EB" },
                     bottom: { style: BorderStyle.SINGLE, size: 1, color: "E5E7EB" },
                     left: { style: BorderStyle.SINGLE, size: 1, color: "E5E7EB" },
                     right: { style: BorderStyle.SINGLE, size: 1, color: "E5E7EB" },
                 },
-                margins: { top: 100, bottom: 100, left: 100, right: 100 }
+                margins: { top: 150, bottom: 150, left: 150, right: 150 }
             }));
         }
         rows.push(new TableRow({ children: cells }));
@@ -392,6 +414,7 @@ export class DocxGenerator {
         rows: rows,
         width: { size: 100, type: WidthType.PERCENTAGE },
         layout: TableLayoutType.AUTOFIT,
+        spacing: { before: 400, after: 400 },
         borders: {
             top: { style: BorderStyle.SINGLE, size: 2, color: "D1D5DB" },
             bottom: { style: BorderStyle.SINGLE, size: 2, color: "D1D5DB" },
@@ -403,10 +426,7 @@ export class DocxGenerator {
     });
   }
 
-  /**
-   * Recursive inline parser to capture nested formatting.
-   */
-  private parseInline(node: Node, currentStyles: any = { font: "Arial", size: 21 }, skipLists = false): (TextRun | ImageRun)[] {
+  private parseInline(node: Node, currentStyles: any = { font: "Arial", size: 22 }, skipLists = false): (TextRun | ImageRun)[] {
     const runs: (TextRun | ImageRun)[] = [];
     
     node.childNodes.forEach(child => {
@@ -427,7 +447,6 @@ export class DocxGenerator {
         if (tag === 'strong' || tag === 'b') nextStyles.bold = true;
         if (tag === 'em' || tag === 'i') nextStyles.italic = true;
         if (tag === 'u') nextStyles.underline = {};
-        if (tag === 's' || tag === 'strike' || tag === 'del') nextStyles.strike = true;
         if (tag === 'code') {
           nextStyles.font = "Courier New";
           nextStyles.size = 18;
@@ -444,64 +463,6 @@ export class DocxGenerator {
     });
     
     return runs;
-  }
-
-  private async createImageRunFromSvg(svgEl: SVGSVGElement): Promise<Paragraph | null> {
-    try {
-        const svgData = new XMLSerializer().serializeToString(svgEl);
-        const svgBase64 = btoa(unescape(encodeURIComponent(svgData)));
-        const dataUrl = `data:image/svg+xml;base64,${svgBase64}`;
-        
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        const img = new Image();
-
-        await new Promise<void>((resolve, reject) => {
-            img.onload = () => {
-                const scale = 2; 
-                canvas.width = (img.width || 800) * scale;
-                canvas.height = (img.height || 600) * scale;
-                if (ctx) {
-                    ctx.fillStyle = "white";
-                    ctx.fillRect(0, 0, canvas.width, canvas.height);
-                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                }
-                resolve();
-            };
-            img.onerror = reject;
-            img.src = dataUrl;
-        });
-
-        const pngBase64 = canvas.toDataURL('image/png').split(',')[1];
-        const binaryString = window.atob(pngBase64);
-        const bytes = new Uint8Array(binaryString.length).map((_, i) => binaryString.charCodeAt(i));
-
-        const viewBox = svgEl.viewBox.baseVal;
-        const width = viewBox.width || svgEl.width.baseVal.value || 400;
-        const height = viewBox.height || svgEl.height.baseVal.value || 300;
-        
-        const MAX_WIDTH = 500; // Word points
-        let finalWidth = width;
-        let finalHeight = height;
-        if (finalWidth > MAX_WIDTH) {
-            const ratio = MAX_WIDTH / finalWidth;
-            finalWidth = MAX_WIDTH;
-            finalHeight = finalHeight * ratio;
-        }
-
-        return new Paragraph({
-            children: [
-                new ImageRun({
-                    data: bytes.buffer,
-                    transformation: { width: finalWidth, height: finalHeight }
-                })
-            ],
-            alignment: AlignmentType.CENTER,
-            spacing: { before: 200, after: 200 }
-        });
-    } catch (e) {
-        return new Paragraph({ text: "[Visual Asset Rendering Error]" });
-    }
   }
 
   private async createImageRun(img: HTMLImageElement): Promise<Paragraph | null> {
@@ -529,32 +490,14 @@ export class DocxGenerator {
                 tempImg.src = src;
             });
         } else {
-             return new Paragraph({ text: `[Image: ${img.alt || 'Asset Reference'}]` });
+             return null;
         }
 
-        const parsePx = (val: string | null) => {
-          if (!val) return null;
-          const num = parseInt(val, 10);
-          return isNaN(num) ? null : num;
-        };
-
-        const reqWidth = parsePx(img.getAttribute('width')) || parsePx(img.style.width);
-        const reqHeight = parsePx(img.getAttribute('height')) || parsePx(img.style.height);
-        
         const aspectRatio = naturalWidth / naturalHeight;
-        let finalWidth = reqWidth || naturalWidth;
-        let finalHeight = reqHeight || (reqWidth ? reqWidth / aspectRatio : naturalHeight);
+        let finalWidth = naturalWidth * 0.75; // px to pt
+        let finalHeight = naturalHeight * 0.75;
 
-        if (reqHeight && !reqWidth) {
-          finalWidth = reqHeight * aspectRatio;
-        }
-
-        // Scale factor: Browser pixels to Word points
-        finalWidth *= 0.75;
-        finalHeight *= 0.75;
-
-        // Content area width constraint (~500 points for A4/Letter)
-        const MAX_WIDTH = 500; 
+        const MAX_WIDTH = 450; 
         if (finalWidth > MAX_WIDTH) {
             const scale = MAX_WIDTH / finalWidth;
             finalWidth = MAX_WIDTH;
@@ -568,11 +511,11 @@ export class DocxGenerator {
                     transformation: { width: finalWidth, height: finalHeight }
                 })
             ],
-            spacing: { before: 200, after: 200 },
+            spacing: { before: 400, after: 400 },
             alignment: AlignmentType.CENTER
         });
     } catch (e) {
-        return new Paragraph({ text: "[Image Asset Data Missing]" });
+        return null;
     }
   }
 }

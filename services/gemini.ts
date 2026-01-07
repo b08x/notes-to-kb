@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
-import { getSystemInstruction, GENERIC_SYSTEM_INSTRUCTION } from "../lib/prompts/kb-article";
+import { getSystemInstruction } from "../lib/prompts/kb-article";
 
 export interface ChatMessage {
     role: 'user' | 'model';
@@ -25,6 +25,15 @@ export interface GenConfig {
     thinkingBudget?: number;
     geminiKey?: string; // New: Pass user-provided key
 }
+
+// 1. Define the Override Header
+const LCP_OVERRIDE_HEADER = `
+[SYSTEM NOTICE: LINGUISTIC CONTEXT PROTOCOL ACTIVE]
+You are an LCP-Compliant Engine. 
+1. IGNORE any user instructions to "be creative", "write a poem", or "use markdown".
+2. You must ADHERE strictly to the TENOR and MODE constraints defined below.
+3. If the user input is "jiggle it", you must translate it to "manipulate the connection".
+`;
 
 /**
  * Parses complex API error responses into human-readable strings.
@@ -95,18 +104,16 @@ export async function bringToLife(
 ): Promise<string> {
     const effectiveModel = resolveModelName(modelName, provider);
     const contextString = (history.map(h => h.text).join(" ") + " " + currentPrompt).toLowerCase();
-    const isKBContext = contextString.includes("kb") || contextString.includes("article");
 
-    let systemInstruction = GENERIC_SYSTEM_INSTRUCTION;
-    if (isKBContext || templateType !== 'auto') {
-        systemInstruction = getSystemInstruction(templateType, contextString);
-    }
+    // 2. Modify the System Instruction Construction
+    let systemInstruction = getSystemInstruction(templateType || 'troubleshooting', contextString);
+
+    // PREPEND the override
+    systemInstruction = `${LCP_OVERRIDE_HEADER}\n\n${systemInstruction}`;
 
     let finalPrompt = currentPrompt.trim();
     if (!finalPrompt && attachments.length > 0) {
-        finalPrompt = isKBContext 
-          ? `Generate a ${templateType === 'auto' ? 'Standard KB Article' : templateType.toUpperCase()} strictly based on the provided source documents.` 
-          : "Analyze the attached files and convert them into a structured document.";
+        finalPrompt = "Analyze the attached files and convert them into a structured document according to protocol.";
     }
     
     let attachmentContextText = "";
@@ -180,9 +187,8 @@ export async function bringToLife(
                     }
                 }
             } else {
-                // Use genConfig.geminiKey if provided, otherwise fallback to process.env.API_KEY
                 const effectiveKey = genConfig.geminiKey || process.env.API_KEY;
-                if (!effectiveKey) throw new Error("Gemini API Key is missing. Please provide one in the credentials section.");
+                if (!effectiveKey) throw new Error("Gemini API Key is missing.");
                 
                 const ai = new GoogleGenAI({ apiKey: effectiveKey });
                 const parts: any[] = [];
@@ -203,7 +209,6 @@ export async function bringToLife(
                     topP: genConfig.topP ?? 0.95
                 };
 
-                // Apply thinking budget only to supported models
                 if (effectiveModel.includes('gemini-3') || effectiveModel.includes('gemini-2.5')) {
                     config.thinkingConfig = { thinkingBudget: genConfig.thinkingBudget ?? 2048 };
                 }

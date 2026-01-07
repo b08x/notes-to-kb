@@ -134,7 +134,6 @@ export class LiveClient {
   public updateContext(html: string) {
       if (!this.isConnected || !html) return;
       this.initialContext = html;
-      // We push a "hidden" update turn to the model so it sees the new document structure
       this.sendText(`[SYSTEM] The document has been updated. Use this new structure for all subsequent edits:\n\`\`\`html\n${html.substring(0, 15000)}\n\`\`\``);
   }
 
@@ -299,7 +298,13 @@ export class LiveClient {
                 }
             }
         }
-        const textPart = chunk.text;
+        
+        // Use part-based extraction to avoid SDK concatenation warnings
+        const textPart = chunk.candidates?.[0]?.content?.parts
+            ?.filter(p => p.text)
+            ?.map(p => p.text)
+            ?.join('') || "";
+
         if (textPart) {
             fullModelResponse += textPart;
             this.callbacks.onTranscription?.(fullModelResponse, 'model');
